@@ -15,13 +15,14 @@ import (
 	"hub/internal/store"
 )
 
-// admin: the logged-in person if they are the admin, else nil
+// admin: the logged-in person if they are the admin, with a passkey, else nil. Telegram alone
+// never makes anyone admin: a Telegram account is only as safe as its SMS and sessions.
 func (a *Server) admin(r *http.Request) *store.Person {
 	if a.cfg.Admin == "" {
 		return nil
 	}
 	id, err := a.resolve(a.session(r))
-	if err != nil || id.person == nil || id.person.Key != a.cfg.Admin {
+	if err != nil || id.person == nil || id.person.Key != a.cfg.Admin || id.pk == nil {
 		return nil
 	}
 	return id.person

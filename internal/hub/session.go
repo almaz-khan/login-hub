@@ -116,10 +116,10 @@ var (
 	stateChars    = regexp.MustCompile(`^[\w-]+$`) // base64url, as random() makes them
 )
 
-// safeNext: after a Telegram login the hub only ever goes on to /authorize (with the app's request)
-// or its own home page; anything else becomes «/»
+// safeNext: after a login the hub only ever goes on to /authorize (with the app's request), the
+// admin UI or its own home page; anything else becomes «/»
 func safeNext(next string) string {
-	if authorizeNext.MatchString(next) {
+	if authorizeNext.MatchString(next) || next == "/admin" {
 		return next
 	}
 	return "/"

@@ -162,11 +162,12 @@ re-enrolling every passkey.
 
 ### The admin UI
 
-`https://login.almaz.dev/admin`, for the `HUB_ADMIN` person logged in to the hub (by any method).
+`https://login.almaz.dev/admin`, for the `HUB_ADMIN` person logged in **with a passkey**: Telegram
+alone never opens it, and the page offers only «Войти с passkey» (then comes back to `/admin`).
 Four pages: **Люди** (people, their groups, apps and passkeys, passkey links, who the bot messages),
 **Группы**, **Сайты** (URLs, login methods, access; a new or rotated client secret is shown once),
 **Журнал** (the audit log). Every change is checked like the seed and audited. The admin can't
-delete themselves or remove their own last way in.
+delete themselves or their own last passkey.
 
 Its CSP header comes from the hub: `script-src 'self'` plus the hash of SvelteKit's one inline
 bootstrap script, `style-src 'self'`, `connect-src 'self'`. Nothing in the UI may set inline styles.

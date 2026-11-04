@@ -241,23 +241,24 @@ func (s *Store) DeletePerson(key, actor, admin string) error {
 	})
 }
 
-// DeletePasskeyChecked: like DeletePasskey, but never the admin's last way in
+// DeletePasskeyChecked: like DeletePasskey, but never the admin's last passkey: only a passkey
+// opens the admin UI, so that would lock the admin out
 func (s *Store) DeletePasskeyChecked(id []byte, actor, admin string) error {
-	var person, telegram string
-	err := s.db.QueryRow(`SELECT k.person, coalesce(p.telegram_id, '') FROM passkeys k JOIN people p ON p.key = k.person WHERE k.id = ?`, id).Scan(&person, &telegram)
+	var person string
+	err := s.db.QueryRow(`SELECT person FROM passkeys WHERE id = ?`, id).Scan(&person)
 	if errors.Is(err, sql.ErrNoRows) {
 		return refuse("Нет такого passkey")
 	}
 	if err != nil {
 		return err
 	}
-	if person == admin && telegram == "" {
+	if person == admin {
 		var n int
 		if err := s.db.QueryRow(`SELECT count(*) FROM passkeys WHERE person = ?`, person).Scan(&n); err != nil {
 			return err
 		}
 		if n == 1 {
-			return refuse("Это последний способ входа админа: сначала добавь Telegram id или другой passkey")
+			return refuse("Это последний passkey админа, а админка открывается только с passkey: сначала добавь другой")
 		}
 	}
 	_, err = s.DeletePasskey(id, actor)

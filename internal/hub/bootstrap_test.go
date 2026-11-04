@@ -78,3 +78,48 @@ func TestAdminLinkOnlyWithoutPasskey(t *testing.T) {
 		t.Fatal("a link for an admin who has a passkey")
 	}
 }
+
+func TestAdminLoginPage(t *testing.T) {
+	e := setup(t)
+	soft := e.enroll("Alice")
+	b := e.browser()
+	resp := b.get(e.url + "/admin")
+	page := body(resp)
+	if resp.StatusCode != http.StatusUnauthorized || !strings.Contains(page, `href="/login/passkey?next=%2Fadmin"`) || strings.Contains(page, "/login/telegram") {
+		t.Fatalf("admin, nobody logged in: %d %s", resp.StatusCode, page)
+	}
+	// the passkey login goes back to the admin UI
+	if next := nextOf(t, e.passkey(b, soft, "/admin")); next != "/admin" {
+		t.Fatalf("next %q", next)
+	}
+	if resp := b.get(e.url + "/admin"); resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		t.Fatalf("admin after login: %d", resp.StatusCode)
+	}
+	// someone logged in who isn't the admin: not a login page, a refusal
+	e.tg.as(bob, "Bob", "bob")
+	bob := e.browser()
+	e.rp("stub").login(bob)
+	if resp := bob.get(e.url + "/admin"); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("Bob: %d", resp.StatusCode)
+	}
+}
+
+func TestAdminNeedsAPasskey(t *testing.T) {
+	e := setup(t)
+	b := e.browser()
+	e.rp("running-club").login(b) // Alice, the admin, by Telegram only
+	resp := b.get(e.url + "/admin")
+	if page := body(resp); resp.StatusCode != http.StatusUnauthorized || !strings.Contains(page, "Вход только с passkey") || strings.Contains(page, "/login/telegram") {
+		t.Fatalf("admin by Telegram: %d %s", resp.StatusCode, page)
+	}
+	if status, _ := e.call(b, http.MethodGet, "/admin/api/state", nil); status != http.StatusForbidden {
+		t.Fatalf("API by Telegram: %d", status)
+	}
+	if resp := b.get(e.url+"/admin/backup", "Sec-Fetch-Site", "none"); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("backup by Telegram: %d", resp.StatusCode)
+	}
+	nextOf(t, e.passkey(b, e.enroll("Alice"), "/admin"))
+	if status, _ := e.call(b, http.MethodGet, "/admin/api/state", nil); status != http.StatusOK {
+		t.Fatalf("API with the passkey: %d", status)
+	}
+}

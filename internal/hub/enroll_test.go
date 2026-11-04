@@ -54,8 +54,7 @@ func ok(t *testing.T, resp *http.Response) {
 
 func TestEnrollByLink(t *testing.T) {
 	e := setup(t)
-	admin := e.browser()
-	e.rp("running-club").login(admin) // Alice, the admin
+	admin := e.adminBrowser()
 	token := e.adminLink(admin, "Bob")
 
 	// Bob, on his own phone, not logged in anywhere
@@ -93,8 +92,7 @@ func TestEnrollByLink(t *testing.T) {
 
 func TestEnrollLinkRaces(t *testing.T) {
 	e := setup(t)
-	admin := e.browser()
-	e.rp("running-club").login(admin)
+	admin := e.adminBrowser()
 	token := e.adminLink(admin, "Bob")
 	// two devices start with the same link; only the first to finish gets a passkey
 	a, b := e.browser(), e.browser()

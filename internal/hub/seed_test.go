@@ -98,8 +98,7 @@ func TestBackup(t *testing.T) {
 	check(anon.get(u, "Authorization", "Bearer "+backupToken))
 
 	// the admin, logged in: a typed URL or a link on the hub, not another site's
-	admin := e.browser()
-	e.rp("running-club").login(admin)
+	admin := e.adminBrowser()
 	check(admin.get(u, "Sec-Fetch-Site", "none"))
 	if resp := admin.get(u, "Sec-Fetch-Site", "cross-site"); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("cross-site: %d", resp.StatusCode)

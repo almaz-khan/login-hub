@@ -65,11 +65,13 @@ func (e *env) state(b *browser) store.State {
 	return st
 }
 
+// adminBrowser: Alice, the admin, logged in with Telegram and her passkey (the admin UI needs the passkey)
 func (e *env) adminBrowser() *browser {
 	e.t.Helper()
 	b := e.browser()
 	e.tg.as(alice, "Alice", "alice")
 	e.rp("running-club").login(b)
+	nextOf(e.t, e.passkey(b, e.enroll("Alice"), "/admin"))
 	return b
 }
 
@@ -157,10 +159,8 @@ func TestAdminPeopleAndGroups(t *testing.T) {
 	if status, _ := e.call(admin, http.MethodPut, "/admin/api/people/Nobody", map[string]string{"name": "x"}); status != http.StatusBadRequest {
 		t.Errorf("edit nobody: %d", status)
 	}
-	// the admin can't lock themselves out
-	if status, out := e.call(admin, http.MethodPut, "/admin/api/people/Alice", map[string]string{"name": "Алиса", "telegram_id": ""}); status != http.StatusBadRequest || !strings.Contains(out["error"].(string), "админ не сможет войти") {
-		t.Errorf("admin without a way in: %d %v", status, out)
-	}
+	// the admin has a passkey (the admin UI needs one), so a Telegram id is optional for them too
+	e.mustCall(admin, http.MethodPut, "/admin/api/people/Alice", map[string]string{"name": "Алиса", "telegram_id": ""})
 	if status, _ := e.call(admin, http.MethodDelete, "/admin/api/people/Alice", nil); status != http.StatusBadRequest {
 		t.Errorf("delete admin: %d", status)
 	}
@@ -270,9 +270,7 @@ func TestAdminPasskeys(t *testing.T) {
 	if resp := e.passkey(e.browser(), soft, "/"); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("deleted passkey still logs in: %d", resp.StatusCode)
 	}
-	// the admin's last way in can't go: Alice, logged in with her only passkey, no Telegram id
-	nextOf(t, e.passkey(admin, e.enroll("Alice"), "/"))
-	e.exec(`UPDATE people SET telegram_id = NULL WHERE key = 'Alice'`)
+	// the admin's last passkey can't go, Telegram id or not: only a passkey opens the admin UI
 	var aliceKey []byte
 	_ = e.cfg.Store.DB().QueryRow(`SELECT id FROM passkeys WHERE person = 'Alice'`).Scan(&aliceKey)
 	if status, _ := e.call(admin, http.MethodDelete, "/admin/api/passkeys/"+b64.EncodeToString(aliceKey), nil); status != http.StatusBadRequest {
@@ -282,7 +280,7 @@ func TestAdminPasskeys(t *testing.T) {
 
 func TestAdminUIServing(t *testing.T) {
 	e := setup(t)
-	if resp := e.browser().get(e.url + "/admin"); resp.StatusCode != http.StatusForbidden {
+	if resp := e.browser().get(e.url + "/admin"); resp.StatusCode != http.StatusUnauthorized { // the login page
 		t.Fatalf("anonymous: %d", resp.StatusCode)
 	}
 	admin := e.adminBrowser()

@@ -256,6 +256,7 @@ go-ahead. Everything that touches real apps, Telegram or Railway comes last.
 - Client secrets only as hashes in the database; signing key and session secret only in Railway variables.
 - Access checked on every `/authorize`, not stored in the session; login methods checked per app.
 - Passkeys: user verification required, exact origin and RP ID, sign-in by credential id + signature.
+- The admin UI, its API and backups need the admin's passkey; Telegram alone never makes anyone admin.
 - `__Host-` cookies, HttpOnly, SameSite=Lax; logout and admin changes only same-origin.
 - Strict CSP with hashes on every page, `frame-ancestors 'none'`, HSTS.
 - Refused attempts logged and messaged (person or Telegram id, name, @username, app).

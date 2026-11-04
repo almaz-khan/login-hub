@@ -174,7 +174,8 @@ func pageHome(id identity, admin bool) string {
 	if !id.proven() {
 		return layout("Вход", `<h1>Один вход на все сайты</h1>
 <p>Сайты отправляют сюда, чтобы узнать, кто ты. Войти нужно один раз, дальше сайты открываются сами.</p>
-<p class="note">Сюда приходят с сайта: открой нужный сайт, он сам пришлёт на вход.</p>`)
+<p class="note">Сюда приходят с сайта: открой нужный сайт, он сам пришлёт на вход.</p>
+<a class="btn alt" href="/admin">Админка</a>`)
 	}
 	return layout("Вход", `<h1>Ты вошёл</h1>
 <p>Как `+account(id)+`, через `+methodsText(id.methods())+`. Сайты, куда у тебя есть доступ, откроются сами.</p>
@@ -223,7 +224,8 @@ var (
 <p>Добавить passkey можно по ссылке от админа или войдя на любой сайт, куда у тебя есть доступ.</p>`)
 
 	pageAdminOnly = layout("Только для админа", `<h1>Только для админа</h1>
-<p>Эта страница для того, кто раздаёт доступ. Войди его аккаунтом на любой сайт, потом вернись сюда.</p>`)
+<p>Ты вошёл, но не как тот, кто раздаёт доступ. Выйди и войди его аккаунтом.</p>
+<a class="btn alt" href="/logout">Выйти</a>`)
 
 	pageUINotBuilt = layout("Админка не собрана", `<h1>Админка не собрана</h1>
 <p>В этой сборке хаба нет админки: <code>cd admin &amp;&amp; npm ci &amp;&amp; npm run build</code>, потом собери хаб заново.</p>`)
@@ -239,6 +241,13 @@ func pageEnroll(p *store.Person, token string) string {
 </div>
 <div id="done" hidden><p>Готово: passkey сохранён, и ты уже вошёл с ним на этом устройстве.</p><a class="btn alt" href="/">На главную</a></div>
 <script>`+passkeyJS+`</script>`)
+}
+
+// pageAdminLogin: the admin UI asks for a passkey; Telegram never opens it
+func pageAdminLogin() string {
+	return layout("Админка", `<h1>Админка</h1>
+<p>Для того, кто раздаёт доступ. Вход только с passkey.</p>
+`+loginButton("passkey", methodButton["passkey"], "/admin", false))
 }
 
 // pageTelegramOff: a Telegram login asked for on a hub without one; c is the app, if known
