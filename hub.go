@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/go-webauthn/webauthn/webauthn"
 )
 
 type Config struct {
@@ -59,6 +60,7 @@ type app struct {
 	tg          string
 	verifier    *oidc.IDTokenVerifier
 	keys        *keySet
+	wa          *webauthn.WebAuthn
 	codes       codeStore
 	discovery   []byte
 	log         *log.Logger
@@ -135,6 +137,11 @@ func newApp(cfg Config) *app {
 	if cfg.Admin == "" {
 		a.log.Printf("no HUB_ADMIN: nobody is admin")
 	}
+	if a.wa, err = newWebAuthn(a.issuer); err != nil {
+		a.missing = append(a.missing, fmt.Sprintf("WebAuthn (%v)", err))
+		a.log.Printf("hub not configured, serving nothing: %s", strings.Join(a.missing, "; "))
+		return a
+	}
 	a.discovery = a.discoveryDoc()
 	remote := oidc.NewRemoteKeySet(oidc.ClientContext(context.Background(), a.client), a.tg+"/.well-known/jwks.json")
 	a.verifier = oidc.NewVerifier(a.tg, remote, &oidc.Config{
@@ -164,6 +171,12 @@ func (a *app) route(path, method string) (http.HandlerFunc, string) {
 		methods = m{"POST": a.token}
 	case "/login/telegram":
 		methods = m{"GET": a.login}
+	case "/login/passkey":
+		methods = m{"GET": a.passkeyPage}
+	case "/login/passkey/options":
+		methods = m{"POST": a.passkeyOptions}
+	case "/login/passkey/verify":
+		methods = m{"POST": a.passkeyVerify}
 	case "/callback":
 		methods = m{"GET": a.callback}
 	case "/logout":

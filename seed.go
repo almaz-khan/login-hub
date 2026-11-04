@@ -50,7 +50,7 @@ var (
 	clientIDRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 	groupNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 	sha256Hex   = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	localHost   = regexp.MustCompile(`^(?:localhost|127\.0\.0\.1|\[::1\])$`)
+	localHost   = regexp.MustCompile(`^(?:localhost|127\.0\.0\.1|::1)$`) // url.Hostname() drops the brackets
 	methods     = map[string]bool{"telegram": true, "passkey": true}
 )
 

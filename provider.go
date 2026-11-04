@@ -237,6 +237,17 @@ func (a *app) authorize(w http.ResponseWriter, r *http.Request) {
 			fail("login_required", "no hub login this app accepts")
 			return
 		}
+		if id.person != nil && !c.Telegram {
+			has, err := a.store.HasPasskeys(id.person.Key)
+			if err != nil {
+				a.broken(w, err)
+				return
+			}
+			if !has {
+				page(w, http.StatusForbidden, pageNoPasskey(c, id))
+				return
+			}
+		}
 		if !id.proven() && len(c.methods()) == 1 {
 			redirect(w, "/login/"+c.methods()[0]+"?next="+url.QueryEscape(next))
 			return

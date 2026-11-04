@@ -25,7 +25,9 @@ form{margin:0}
 .btn{display:block;width:100%;border:0;cursor:pointer;font:inherit;margin-top:8px;padding:14px 18px;border-radius:999px;background:#d6f23c;color:#141118;font-weight:700;text-align:center;text-decoration:none}
 .btn.alt{background:transparent;color:#f5f1fb;box-shadow:inset 0 0 0 1px #4a4352}
 .btn:focus-visible{outline:3px solid #f5f1fb;outline-offset:3px}
-.note{font-size:13px;color:#a59eb2}`
+.note{font-size:13px;color:#a59eb2}
+.btn:disabled{opacity:.6;cursor:progress}
+.note:empty{display:none}`
 
 var cssHash = hash(css)
 
@@ -42,6 +44,29 @@ func csp(formAction string) string {
 }
 
 func page(w http.ResponseWriter, status int, body string) { pageCSP(w, status, body, "") }
+
+// passkeyJS: the only script the hub serves, inline and allowed by its hash. It asks the browser
+// for a passkey and posts the answer back; base64url ↔ bytes by hand, since the JSON helpers
+// (parseRequestOptionsFromJSON, toJSON) aren't in every browser yet.
+const passkeyJS = `const d=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0)).buffer;
+const u=a=>btoa(String.fromCharCode(...new Uint8Array(a))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const btn=document.getElementById('pk'),msg=document.getElementById('msg');
+const post=async(path,body)=>{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Не получилось войти');return j};
+btn.addEventListener('click',async()=>{btn.disabled=true;msg.textContent='';try{
+const o=await post('/login/passkey/options',{});const p=o.options.publicKey;p.challenge=d(p.challenge);
+const c=await navigator.credentials.get({publicKey:p});const r=c.response;
+const j=await post('/login/passkey/verify',{challenge:o.challenge,next:btn.dataset.next,credential:{id:c.id,rawId:u(c.rawId),type:c.type,response:{clientDataJSON:u(r.clientDataJSON),authenticatorData:u(r.authenticatorData),signature:u(r.signature),userHandle:r.userHandle?u(r.userHandle):null},clientExtensionResults:c.getClientExtensionResults()}});
+location.assign(j.next)}catch(e){msg.textContent=e.name==='NotAllowedError'?'Вход отменён. Попробуй ещё раз.':e.message;btn.disabled=false}});`
+
+var passkeyCSP = fmt.Sprintf("default-src 'none'; style-src '%s'; script-src '%s'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'", cssHash, hash(passkeyJS))
+
+func pageScript(w http.ResponseWriter, status int, body string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", passkeyCSP)
+	w.WriteHeader(status)
+	_, _ = fmt.Fprint(w, body)
+}
 
 func pageCSP(w http.ResponseWriter, status int, body, formAction string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -148,6 +173,20 @@ func pageChooser(c *client, id identity, next string) string {
 	}
 	return layout("Вход", `<h1>Вход на «`+e(c.Name)+`»</h1>
 `+b.String())
+}
+
+func pagePasskey(next string) string {
+	return layout("Вход с passkey", `<h1>Вход с passkey</h1>
+<p>Телефон или компьютер попросит Face ID, отпечаток или код устройства.</p>
+<button class="btn" type="button" id="pk" data-next="`+e(next)+`">Войти с passkey</button>
+<p class="note" id="msg" role="status" aria-live="polite"></p>
+<script>`+passkeyJS+`</script>`)
+}
+
+// pageNoPasskey: a passkey-only app, for someone the hub knows but who has no passkey yet
+func pageNoPasskey(c *client, id identity) string {
+	return layout("Нужен passkey", `<h1>Нужен passkey</h1>
+<p>Ты вошёл как `+account(id)+`, но в «`+e(c.Name)+`» входят только с passkey, а у тебя его ещё нет. Попроси ссылку, чтобы его создать.</p>`)
 }
 
 func pageFailed(next string) string {

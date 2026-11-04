@@ -21,9 +21,9 @@ func TestSeedChecks(t *testing.T) {
 		"unknown person":    {`"allow":["group:club"]`, `"allow":["Zed"]`, `"Zed" is not in people`},
 		"unknown group":     {`"allow":["group:club"]`, `"allow":["group:nope"]`, `unknown group "nope"`},
 		"group member":      {`"club":["Alice"]`, `"club":["Zed"]`, `groups.club: "Zed" is not in people`},
-		"http redirect":     {`http://localhost:1/auth/callback`, `http://running.example/auth/callback`, `is not https`},
-		"fragment":          {`http://localhost:1/auth/callback`, `https://running.example/auth/callback#x`, `has a fragment`},
-		"relative redirect": {`http://localhost:1/auth/callback`, `/auth/callback`, `not an absolute URL`},
+		"http redirect":     {`http://[::1]:1/auth/callback`, `http://running.example/auth/callback`, `is not https`},
+		"fragment":          {`http://[::1]:1/auth/callback`, `https://running.example/auth/callback#x`, `has a fragment`},
+		"relative redirect": {`http://[::1]:1/auth/callback`, `/auth/callback`, `not an absolute URL`},
 		"no secret":         {rcHash, `"secret_sha256":""`, `secret_sha256`},
 		"upper hex secret":  {rcHash, strings.ToUpper(rcHash), `secret_sha256`},
 		"misspelt key":      {`"allow":["group:club"]`, `"allows":["group:club"]`, `unknown field "allows"`},
@@ -210,7 +210,7 @@ func TestUnknownTelegramAccount(t *testing.T) {
 
 func TestBackup(t *testing.T) {
 	e := setup(t)
-	u := e.srv.URL + "/admin/backup"
+	u := e.url + "/admin/backup"
 	anon := e.browser()
 	for name, h := range map[string][]string{
 		"nothing":     nil,

@@ -114,6 +114,15 @@ func (a *app) addProof(old *sessionData, tg *tgProof, pk *pkProof) (*sessionData
 	if err != nil {
 		return nil, nil, err
 	}
+	// the login just made always wins, even against an older proof from the same second
+	if tg != nil && id.tg == nil {
+		id, err = a.resolve(&sessionData{TG: tg})
+	} else if pk != nil && id.pk == nil {
+		id, err = a.resolve(&sessionData{PK: pk})
+	}
+	if err != nil {
+		return nil, nil, err
+	}
 	return &sessionData{TG: id.tg, PK: id.pk}, id.person, nil
 }
 

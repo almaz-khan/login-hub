@@ -74,6 +74,26 @@ var migrations = []string{
 		action TEXT NOT NULL,
 		detail TEXT NOT NULL DEFAULT ''
 	) STRICT;`,
+
+	// 2: passkeys, WebAuthn challenges, and each person's WebAuthn user handle
+	`ALTER TABLE people ADD COLUMN webauthn_handle BLOB;
+	CREATE UNIQUE INDEX people_webauthn_handle ON people(webauthn_handle);
+	CREATE TABLE passkeys (
+		id           BLOB PRIMARY KEY,
+		person       TEXT NOT NULL REFERENCES people(key) ON DELETE CASCADE ON UPDATE CASCADE,
+		data         BLOB NOT NULL,
+		label        TEXT NOT NULL CHECK (label <> ''),
+		created_at   INTEGER NOT NULL,
+		last_used_at INTEGER
+	) STRICT;
+	CREATE INDEX passkeys_person ON passkeys(person);
+	CREATE TABLE challenges (
+		id         TEXT PRIMARY KEY,
+		purpose    TEXT NOT NULL,
+		data       BLOB NOT NULL,
+		person     TEXT,
+		expires_at INTEGER NOT NULL
+	) STRICT;`,
 }
 
 type Store struct {
@@ -306,10 +326,6 @@ func (s *Store) Seen(person string) error {
 	_, err := s.db.Exec(`UPDATE people SET last_seen_at = ? WHERE key = ?`, s.now().Unix(), person)
 	return err
 }
-
-// PasskeyOf: whether credential cred is (still) one of person's passkeys. Passkeys come in phase 4;
-// until then no passkey proof can exist.
-func (s *Store) PasskeyOf(cred, person string) (bool, error) { return false, nil }
 
 // Backup: a consistent copy of the whole database at path (which must not exist)
 func (s *Store) Backup(path string) error {

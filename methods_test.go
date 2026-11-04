@@ -48,7 +48,13 @@ func TestStepUp(t *testing.T) {
 	b := e.browser()
 	e.rp("running-club").login(b) // Telegram proven
 	pk := e.rp("pk")
+	// Alice has no passkey yet: she is told to get one, not sent round in circles
 	resp := b.get(pk.start().url)
+	if page := body(resp); resp.StatusCode != http.StatusForbidden || !strings.Contains(page, "Нужен passkey") || !strings.Contains(page, "Passkey Only") {
+		t.Fatalf("no passkey: %d %s", resp.StatusCode, page)
+	}
+	e.exec(`INSERT INTO passkeys (id, person, data, label, created_at) VALUES (x'01', 'Alice', CAST('{}' AS BLOB), 'test', 0)`)
+	resp = b.get(pk.start().url)
 	page := body(resp)
 	if resp.StatusCode != http.StatusOK || resp.Header.Get("Location") != "" || !strings.Contains(page, "нужен вход через passkey") || !strings.Contains(page, "<b>Алиса</b>") || strings.Contains(page, "/login/telegram") {
 		t.Fatalf("step-up: %d %s", resp.StatusCode, page)
@@ -78,15 +84,15 @@ func TestProofsExpire(t *testing.T) {
 func TestHomeAndLoginPaths(t *testing.T) {
 	e := setup(t)
 	b := e.browser()
-	if page := body(b.get(e.srv.URL + "/")); !strings.Contains(page, "Один вход на все сайты") {
+	if page := body(b.get(e.url + "/")); !strings.Contains(page, "Один вход на все сайты") {
 		t.Fatal(page)
 	}
 	e.rp("running-club").login(b)
-	if page := body(b.get(e.srv.URL + "/")); !strings.Contains(page, "<b>Алиса</b> (@alice), через Telegram") {
+	if page := body(b.get(e.url + "/")); !strings.Contains(page, "<b>Алиса</b> (@alice), через Telegram") {
 		t.Fatal(page)
 	}
 	// /login itself is gone: each method has its own path
-	if resp := b.get(e.srv.URL + "/login?next=" + url.QueryEscape("/authorize?x")); resp.StatusCode != http.StatusNotFound {
+	if resp := b.get(e.url + "/login?next=" + url.QueryEscape("/authorize?x")); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("/login: %d", resp.StatusCode)
 	}
 }

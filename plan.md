@@ -44,7 +44,7 @@ Migrations are numbered and run at start, in one transaction each (`PRAGMA user_
 | `app_urls` | Exact redirect URLs and logout return URLs per app |
 | `app_access` | Who may open an app: a person or a group (exactly one per row) |
 | `settings` | `notify`: the person the bot messages about refused attempts |
-| `passkeys` | Credential id, public key, person, label, added, last used (phase 3) |
+| `passkeys`, `challenges` | Credential id, go-webauthn's credential (public key, flags, counter), person, label, added, last used; single-use WebAuthn challenges |
 | `enrollments` | Single-use passkey enrollment links (phase 4) |
 | `audit` | Every change: when, who, what |
 
@@ -134,7 +134,7 @@ Rules that matter:
 ### Cookies
 
 - `__Host-hub_session`: Secure, HttpOnly, SameSite=Lax, 180 days.
-- `__Host-hub_oauth_<state>`, `__Host-hub_passkey_<id>`: one per login in progress, 10 minutes.
+- `__Host-hub_oauth_<state>`: one per Telegram login in progress, 10 minutes.
   `__Host-` everywhere, so sibling `*.almaz.dev` sites can't set or shadow them.
 
 ## Passkeys (phase 3)
@@ -142,7 +142,8 @@ Rules that matter:
 - `go-webauthn/webauthn`, as in p2pvc. RP ID `login.almaz.dev`, exact origin check.
 - Discoverable credentials, user verification required. The person is found by credential id plus
   signature, never by the unsigned user handle (password managers like NordPass alter it).
-- The challenge lives in a signed short-lived cookie: nothing stored for a login in progress.
+- Challenges are stored in the database, single use (taking one deletes it) and valid 5 minutes,
+  so a captured answer can't be replayed. At most 1000 are live at once.
 - One passkey works for every app, because the login always happens at the hub. Passkeys from
   p2pvc or subdrop are bound to their own hosts and can't be reused.
 - The sign counter is stored but not enforced: synced passkeys (iCloud, Google) always report 0.
@@ -217,7 +218,7 @@ deployed without a go-ahead.
    `telegram_id`, backups (`/admin/backup`, `HUB_BACKUP_TOKEN`), fail closed on a bad database.
 3. ✅ **Login methods per app:** proven methods in the session, the chooser and step-up pages, `amr`.
    Telegram is still the only working method.
-4. **Passkey login:** WebAuthn with a software authenticator in the tests: wrong origin or RP ID,
+4. ✅ **Passkey login:** WebAuthn with a software authenticator in the tests: wrong origin or RP ID,
    no user verification, unknown or removed credential, a passkey-only app refusing a Telegram
    session, step-up refusing a different person.
 5. **Enrollment:** admin links, the enrollment page, adding a device, the bot message, removing a passkey.

@@ -25,7 +25,8 @@ Railway volume. The seed for a new database is `private/seed.json` (gitignored).
 | `GET /authorize` | Client and exact redirect URL first (a mismatch shows an error page and never redirects), then PKCE S256, state, nonce, `openid`; logs in if needed; checks access in the database; redirects with a 60-second single-use code and `iss` |
 | `POST /token` | Basic auth with the client secret, code, same redirect URL, PKCE verifier → `id_token` (5 min) and an `access_token` nothing accepts |
 | `GET /login/telegram`, `GET /callback` | The Telegram login (`/callback` is the redirect URL registered in @BotFather) |
-| `GET /login/passkey` | The passkey login (phase 4) |
+| `GET /login/passkey` | The passkey login page (its one script is allowed by hash) |
+| `POST /login/passkey/options`, `POST /login/passkey/verify` | A single-use challenge (5 min), then the signed answer → a passkey proof. Same-origin JSON only |
 | `GET /logout` | «Выйти на всех сайтах?»; takes `client_id`, `post_logout_redirect_uri` (listed for that app) and `state` |
 | `POST /logout` | Same-origin only (not same-site: every `*.almaz.dev` app is same-site); ends the hub session |
 | `GET /admin/backup` | A consistent copy of the database: the admin (`HUB_ADMIN`) logged in, or `Authorization: Bearer $HUB_BACKUP_TOKEN` |
@@ -43,7 +44,16 @@ valid 180 days), and `/authorize` lets someone through silently only with a proo
 - no proof, one method: straight to that method's login;
 - no proof, both: a chooser;
 - only a proof the app doesn't accept: a step-up page with the app's methods;
-- proofs of two different people never add up: the newer login wins.
+- proofs of two different people never add up: the newer login wins;
+- a passkey-only app, for someone known but without a passkey: «Нужен passkey».
+
+### Passkeys
+
+go-webauthn with p2pvc's rules: discoverable credentials, user verification required, RP ID =
+the hub's host (one passkey works for every app). Who logs in is decided by the credential id and
+its signature; the user handle isn't signed and some password managers alter it, so it is only
+logged. A passkey removed from the database ends its proof in every session at once. Adding
+passkeys (enrollment links) is phase 5.
 
 `prompt=none` is supported: `error=login_required` without a proof the app accepts, `error=access_denied`
 for someone not allowed.
@@ -76,7 +86,9 @@ or a failed `quick_check` serves nothing. So does a database without apps.
 
 | Table | |
 | --- | --- |
-| `people` | `key` (= `sub`), `name`, `telegram_id` (unique, optional), `last_seen_at` |
+| `people` | `key` (= `sub`), `name`, `telegram_id` (unique, optional), `last_seen_at`, `webauthn_handle` |
+| `passkeys` | Credential id, go-webauthn's credential JSON (public key, flags, counter), person, label, `last_used_at` |
+| `challenges` | WebAuthn challenges: single use, 5 minutes |
 | `groups`, `group_members` | Groups of people; deleting a person or renaming a group cascades |
 | `apps`, `app_urls` | Client id, name, `secret_sha256`, login methods; exact redirect and logout URLs |
 | `app_access` | A person or a group per row, never both |

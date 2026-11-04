@@ -56,7 +56,7 @@ var secrets = map[string]string{
 
 func appURL(client string) string {
 	port := map[string]string{"running-club": "1", "stub": "2", "plus": "3", "both": "4", "pk": "5"}[client]
-	return "http://localhost:" + port
+	return "http://[::1]:" + port
 }
 
 func sha(s string) string {
@@ -222,6 +222,7 @@ type env struct {
 	tg    *fakeTG
 	bot   *fakeBot
 	srv   *httptest.Server
+	url   string // the hub's address: localhost, since WebAuthn refuses an IP as the RP ID
 	app   atomic.Pointer[app]
 	cfg   Config
 	logs  *syncBuffer
@@ -257,6 +258,7 @@ func setup(t *testing.T, mod ...func(*Config)) *env {
 	e := &env{t: t, tg: newFakeTG(t), bot: newFakeBot(t), logs: &syncBuffer{}}
 	e.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { e.app.Load().ServeHTTP(w, r) }))
 	t.Cleanup(e.srv.Close)
+	e.url = strings.Replace(e.srv.URL, "127.0.0.1", "localhost", 1)
 	store := testStore(t, seedJSON())
 	e.cfg = Config{
 		Store:         store,
@@ -265,7 +267,7 @@ func setup(t *testing.T, mod ...func(*Config)) *env {
 		ClientID:      tgClient,
 		ClientSecret:  tgSecret,
 		SessionSecret: strings.Repeat("s", 32),
-		PublicURL:     e.srv.URL,
+		PublicURL:     e.url,
 		SigningKey:    keyA,
 		BotToken:      botToken,
 		TGBase:        e.tg.URL,
@@ -273,6 +275,7 @@ func setup(t *testing.T, mod ...func(*Config)) *env {
 		Log:           log.New(e.logs, "", 0),
 		Now:           func() time.Time { return time.Now().Add(time.Duration(e.shift.Load()) * time.Second) },
 	}
+	store.now = e.cfg.Now
 	e.reconfigure(mod...)
 	e.tg.clock = e.cfg.Now
 	e.tg.as(alice, "Alice A", "alice")
@@ -328,7 +331,7 @@ type browser struct {
 func (e *env) browser() *browser {
 	jar, _ := cookiejar.New(nil)
 	return &browser{t: e.t, Client: &http.Client{Jar: jar, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if req.URL.Hostname() == "localhost" {
+		if req.URL.Hostname() == "::1" { // an app
 			return http.ErrUseLastResponse
 		}
 		return nil
@@ -377,7 +380,7 @@ type rp struct {
 
 func (e *env) rp(id string) *rp {
 	ctx := context.Background()
-	p, err := oidc.NewProvider(ctx, e.srv.URL)
+	p, err := oidc.NewProvider(ctx, e.url)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -411,7 +414,7 @@ func (r *rp) back(resp *http.Response, a attempt) string {
 		r.e.t.Fatalf("redirect to %s, not to %s", loc, r.id)
 	}
 	q := loc.Query()
-	if q.Get("state") != a.state || q.Get("iss") != r.e.srv.URL {
+	if q.Get("state") != a.state || q.Get("iss") != r.e.url {
 		r.e.t.Fatalf("state/iss: %v", q)
 	}
 	if q.Get("error") != "" {
@@ -435,6 +438,23 @@ func (r *rp) exchange(code string, a attempt) (*oidc.IDToken, error) {
 		return nil, fmt.Errorf("nonce %q", idt.Nonce)
 	}
 	return idt, nil
+}
+
+// stepUp: the whole thing when the hub asks for another method first: «clicks» method's button
+func (r *rp) stepUp(b *browser, method string) *oidc.IDToken {
+	r.e.t.Helper()
+	a := r.start()
+	resp := b.get(a.url)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body(resp), "/login/"+method+"?next=") {
+		r.e.t.Fatalf("no step-up page: %d", resp.StatusCode)
+	}
+	u, _ := url.Parse(a.url)
+	code := r.back(b.get(r.e.url+"/login/"+method+"?next="+url.QueryEscape("/authorize?"+u.RawQuery)), a)
+	idt, err := r.exchange(code, a)
+	if err != nil {
+		r.e.t.Fatal(err)
+	}
+	return idt
 }
 
 // login: the whole thing for app id, in browser b; the verified ID token
@@ -607,7 +627,7 @@ func TestTokenRefusals(t *testing.T) {
 		t.Fatal("redirect_uri differs, but accepted")
 	}
 
-	resp := b.get(e.srv.URL + "/token")
+	resp := b.get(e.url + "/token")
 	if resp.StatusCode != http.StatusMethodNotAllowed || resp.Header.Get("Allow") != "POST" {
 		t.Fatalf("GET /token: %d %q", resp.StatusCode, resp.Header.Get("Allow"))
 	}
@@ -625,7 +645,7 @@ func TestSecretEncodings(t *testing.T) {
 	a := p.start()
 	code := p.back(b.get(a.url), a)
 	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {p.oauth.RedirectURL}, "code_verifier": {a.verifier}}
-	req, _ := http.NewRequest(http.MethodPost, e.srv.URL+"/token", strings.NewReader(form.Encode()))
+	req, _ := http.NewRequest(http.MethodPost, e.url+"/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetBasicAuth("plus", secrets["plus"])
 	resp, err := http.DefaultClient.Do(req)
@@ -718,7 +738,7 @@ func TestKeyRotation(t *testing.T) {
 		t.Fatal(idt.Subject)
 	}
 	var jwks jose.JSONWebKeySet
-	_ = json.Unmarshal([]byte(body(b.get(e.srv.URL+"/jwks.json"))), &jwks)
+	_ = json.Unmarshal([]byte(body(b.get(e.url+"/jwks.json"))), &jwks)
 	if len(jwks.Keys) != 2 {
 		t.Fatalf("jwks during rotation: %d keys", len(jwks.Keys))
 	}
@@ -791,7 +811,7 @@ func TestTelegramFailures(t *testing.T) {
 	}
 	e.tg.badNonce = false
 	// a callback without its login cookie (another browser, or expired)
-	resp = e.browser().get(e.srv.URL + "/callback?code=x&state=" + random())
+	resp = e.browser().get(e.url + "/callback?code=x&state=" + random())
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("no cookie: %d", resp.StatusCode)
 	}
@@ -809,7 +829,7 @@ func TestLogout(t *testing.T) {
 	b := e.browser()
 	rc := e.rp("running-club")
 	rc.login(b)
-	logout := e.srv.URL + "/logout?" + url.Values{"client_id": {"running-club"}, "post_logout_redirect_uri": {appURL("running-club") + "/"}, "state": {"s1"}}.Encode()
+	logout := e.url + "/logout?" + url.Values{"client_id": {"running-club"}, "post_logout_redirect_uri": {appURL("running-club") + "/"}, "state": {"s1"}}.Encode()
 
 	resp := b.get(logout)
 	page := body(resp)
@@ -818,11 +838,11 @@ func TestLogout(t *testing.T) {
 	}
 	form := url.Values{"client_id": {"running-club"}, "post_logout_redirect_uri": {appURL("running-club") + "/"}, "state": {"s1"}}
 	for _, h := range [][]string{{"Sec-Fetch-Site", "same-site"}, {"Sec-Fetch-Site", "cross-site"}, {"Origin", "https://evil.example"}} {
-		if resp := b.post(e.srv.URL+"/logout", form, h...); resp.StatusCode != http.StatusForbidden {
+		if resp := b.post(e.url+"/logout", form, h...); resp.StatusCode != http.StatusForbidden {
 			t.Fatalf("logout from %v: %d", h, resp.StatusCode)
 		}
 	}
-	resp = b.post(e.srv.URL+"/logout", form, "Sec-Fetch-Site", "same-origin")
+	resp = b.post(e.url+"/logout", form, "Sec-Fetch-Site", "same-origin")
 	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != appURL("running-club")+"/?state=s1" {
 		t.Fatalf("logout: %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
@@ -832,7 +852,7 @@ func TestLogout(t *testing.T) {
 		t.Fatalf("telegram logins: %d", e.tg.authCount())
 	}
 	// an unlisted return address is dropped, not followed
-	resp = b.post(e.srv.URL+"/logout", url.Values{"client_id": {"running-club"}, "post_logout_redirect_uri": {"https://evil.example/"}}, "Origin", e.srv.URL)
+	resp = b.post(e.url+"/logout", url.Values{"client_id": {"running-club"}, "post_logout_redirect_uri": {"https://evil.example/"}}, "Origin", e.url)
 	if resp.StatusCode != http.StatusOK || resp.Header.Get("Location") != "" || !strings.Contains(body(resp), "Ты вышел") {
 		t.Fatalf("unlisted return: %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
@@ -846,32 +866,32 @@ func TestDiscoveryAndHeaders(t *testing.T) {
 	e := setup(t)
 	b := e.browser()
 	var d map[string]any
-	resp := b.get(e.srv.URL + "/.well-known/openid-configuration")
+	resp := b.get(e.url + "/.well-known/openid-configuration")
 	if err := json.Unmarshal([]byte(body(resp)), &d); err != nil {
 		t.Fatal(err)
 	}
-	if d["issuer"] != e.srv.URL || fmt.Sprint(d["code_challenge_methods_supported"]) != "[S256]" || fmt.Sprint(d["id_token_signing_alg_values_supported"]) != "[EdDSA]" || fmt.Sprint(d["token_endpoint_auth_methods_supported"]) != "[client_secret_basic]" {
+	if d["issuer"] != e.url || fmt.Sprint(d["code_challenge_methods_supported"]) != "[S256]" || fmt.Sprint(d["id_token_signing_alg_values_supported"]) != "[EdDSA]" || fmt.Sprint(d["token_endpoint_auth_methods_supported"]) != "[client_secret_basic]" {
 		t.Fatalf("discovery: %v", d)
 	}
 	if resp.Header.Get("X-Frame-Options") != "DENY" || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'") {
 		t.Fatal("headers")
 	}
 	var jwks jose.JSONWebKeySet
-	_ = json.Unmarshal([]byte(body(b.get(e.srv.URL+"/jwks.json"))), &jwks)
+	_ = json.Unmarshal([]byte(body(b.get(e.url+"/jwks.json"))), &jwks)
 	if len(jwks.Keys) != 1 || jwks.Keys[0].Algorithm != "EdDSA" || jwks.Keys[0].KeyID != kidOf(mustSeed(keyA).Public().(ed25519.PublicKey)) {
 		t.Fatalf("jwks: %+v", jwks)
 	}
-	if resp := b.get(e.srv.URL + "/healthz"); resp.StatusCode != http.StatusOK {
+	if resp := b.get(e.url + "/healthz"); resp.StatusCode != http.StatusOK {
 		t.Fatal(resp.StatusCode)
 	}
-	if resp := b.get(e.srv.URL + "/nope"); resp.StatusCode != http.StatusNotFound {
+	if resp := b.get(e.url + "/nope"); resp.StatusCode != http.StatusNotFound {
 		t.Fatal(resp.StatusCode)
 	}
-	req, _ := http.NewRequest(http.MethodHead, e.srv.URL+"/authorize", nil)
+	req, _ := http.NewRequest(http.MethodHead, e.url+"/authorize", nil)
 	if resp, _ := b.Do(req); resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("HEAD /authorize: %d", resp.StatusCode)
 	}
-	if resp := b.get(e.srv.URL + "/"); !strings.Contains(resp.Header.Get("Content-Security-Policy"), "style-src 'sha256-") {
+	if resp := b.get(e.url + "/"); !strings.Contains(resp.Header.Get("Content-Security-Policy"), "style-src 'sha256-") {
 		t.Fatal(resp.Header.Get("Content-Security-Policy"))
 	}
 }
