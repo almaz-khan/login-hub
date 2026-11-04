@@ -67,7 +67,7 @@ type enrollChallenge struct {
 
 func (a *Server) enrollOptions(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		jsonError(w, http.StatusForbidden, "Только со страницы входа")
+		jsonError(w, http.StatusForbidden, "Only from the sign-in page")
 		return
 	}
 	var in struct {
@@ -76,16 +76,16 @@ func (a *Server) enrollOptions(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&in)
 	p, err := a.enrollSubject(r, in.Token)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "Не получилось начать")
+		jsonError(w, http.StatusInternalServerError, "Couldn't start")
 		return
 	}
 	if p == nil {
-		jsonError(w, http.StatusForbidden, "Ссылка уже использована или устарела")
+		jsonError(w, http.StatusForbidden, "This link was already used or has expired")
 		return
 	}
 	u, err := a.waUser(p)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "Не получилось начать")
+		jsonError(w, http.StatusInternalServerError, "Couldn't start")
 		return
 	}
 	exclude := make([]protocol.CredentialDescriptor, 0, len(u.creds))
@@ -103,7 +103,7 @@ func (a *Server) enrollOptions(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		a.log.Printf("enroll options: %v", err)
-		jsonError(w, http.StatusInternalServerError, "Не получилось начать")
+		jsonError(w, http.StatusInternalServerError, "Couldn't start")
 		return
 	}
 	ch := enrollChallenge{Session: *session}
@@ -113,7 +113,7 @@ func (a *Server) enrollOptions(w http.ResponseWriter, r *http.Request) {
 	data, _ := json.Marshal(ch)
 	id := random()
 	if err := a.store.PutChallenge(id, "register", data, p.Key, challengeTTL); err != nil {
-		jsonError(w, http.StatusServiceUnavailable, "Слишком много запросов сразу, попробуй через минуту")
+		jsonError(w, http.StatusServiceUnavailable, "Too many requests at once, try again in a minute")
 		return
 	}
 	jsonOut(w, http.StatusOK, map[string]any{"challenge": id, "options": options})
@@ -121,7 +121,7 @@ func (a *Server) enrollOptions(w http.ResponseWriter, r *http.Request) {
 
 func (a *Server) enrollVerify(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		jsonError(w, http.StatusForbidden, "Только со страницы входа")
+		jsonError(w, http.StatusForbidden, "Only from the sign-in page")
 		return
 	}
 	var in struct {
@@ -130,47 +130,47 @@ func (a *Server) enrollVerify(w http.ResponseWriter, r *http.Request) {
 		Credential json.RawMessage `json:"credential"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&in); err != nil {
-		jsonError(w, http.StatusBadRequest, "Не получилось прочитать ответ passkey")
+		jsonError(w, http.StatusBadRequest, "Couldn't read the passkey's answer")
 		return
 	}
 	data, key, ok, err := a.store.TakeChallenge(in.Challenge, "register")
 	if err != nil || !ok {
-		jsonError(w, http.StatusBadRequest, "Запрос устарел. Попробуй ещё раз")
+		jsonError(w, http.StatusBadRequest, "The request expired. Try again")
 		return
 	}
 	var ch enrollChallenge
 	if err := json.Unmarshal(data, &ch); err != nil {
-		jsonError(w, http.StatusInternalServerError, "Не получилось сохранить")
+		jsonError(w, http.StatusInternalServerError, "Couldn't save it")
 		return
 	}
 	p, err := a.store.Person(key)
 	if err != nil || p == nil {
-		jsonError(w, http.StatusForbidden, "Такого человека больше нет")
+		jsonError(w, http.StatusForbidden, "That person no longer exists")
 		return
 	}
 	// without a link, it must still be that person logged in here
 	if ch.LinkHash == nil {
 		id, err := a.resolve(a.session(r))
 		if err != nil || id.person == nil || id.person.Key != p.Key {
-			jsonError(w, http.StatusForbidden, "Войди снова и попробуй ещё раз")
+			jsonError(w, http.StatusForbidden, "Sign in again and try again")
 			return
 		}
 	}
 	u, err := a.waUser(p)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "Не получилось сохранить")
+		jsonError(w, http.StatusInternalServerError, "Couldn't save it")
 		return
 	}
 	parsed, err := protocol.ParseCredentialCreationResponseBytes(in.Credential)
 	if err != nil {
 		a.log.Printf("enroll failed: %s: parse: %v", p.Key, err)
-		jsonError(w, http.StatusBadRequest, "Не получилось прочитать ответ passkey")
+		jsonError(w, http.StatusBadRequest, "Couldn't read the passkey's answer")
 		return
 	}
 	cred, err := a.wa.CreateCredential(u, ch.Session, parsed)
 	if err != nil {
 		a.log.Printf("enroll failed: %s: %s", p.Key, describe(err))
-		jsonError(w, http.StatusForbidden, "Passkey не подтвердился")
+		jsonError(w, http.StatusForbidden, "The passkey couldn't be verified")
 		return
 	}
 	label := cleanLabel(in.Label)
@@ -182,22 +182,22 @@ func (a *Server) enrollVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case errors.Is(err, store.ErrLinkUsed):
-		jsonError(w, http.StatusForbidden, "Ссылка уже использована или устарела")
+		jsonError(w, http.StatusForbidden, "This link was already used or has expired")
 		return
 	case err != nil && strings.Contains(err.Error(), "UNIQUE"):
-		jsonError(w, http.StatusConflict, "Этот passkey уже добавлен")
+		jsonError(w, http.StatusConflict, "This passkey is already added")
 		return
 	case err != nil:
 		a.log.Printf("enroll failed: %s: %v", p.Key, err)
-		jsonError(w, http.StatusInternalServerError, "Не получилось сохранить")
+		jsonError(w, http.StatusInternalServerError, "Couldn't save it")
 		return
 	}
-	how := "сам, войдя"
+	how := "signed in"
 	if ch.LinkHash != nil {
-		how = "по ссылке"
+		how = "by link"
 	}
 	a.log.Printf("passkey added: %s («%s», %s)", p.Key, label, how)
-	a.tell("🔑 Новый passkey: " + p.Key + " («" + label + "», " + how + ")")
+	a.tell("🔑 New passkey: " + p.Key + " (“" + label + "”, " + how + ")")
 	s, _, err := a.addProof(a.session(r), nil, &pkProof{Person: p.Key, Cred: b64.EncodeToString(cred.ID), At: a.now().Unix()})
 	if err == nil {
 		a.saveSession(w, s)

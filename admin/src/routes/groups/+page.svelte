@@ -22,8 +22,8 @@
 </script>
 
 <section class="panel">
-	<h1>Группы</h1>
-	<p class="muted small">Сайту можно дать доступ целой группе: кто в ней, тот и входит.</p>
+	<h1>Groups</h1>
+	<p class="muted small">An app can be opened to a whole group: whoever is in it gets in.</p>
 	<div class="list">
 		{#each s.groups as g (g.name)}
 			<article class="stack" aria-label={g.name}>
@@ -31,10 +31,10 @@
 					<div>
 						<h2 class="mono">{g.name}</h2>
 						<p class="muted small">
-							{g.members.length} чел. · сайты: {usedBy(g.name).join(', ') || '—'}
+							{g.members.length} {g.members.length === 1 ? 'person' : 'people'} · apps: {usedBy(g.name).join(', ') || '—'}
 						</p>
 					</div>
-					<Confirm label="Удалить" question={`Удалить группу ${g.name}? Её доступы к сайтам пропадут.`} onconfirm={() => change(() => api('DELETE', `/groups/${enc(g.name)}`))} />
+					<Confirm label="Delete" question={`Delete the group ${g.name}? Its access to apps goes with it.`} onconfirm={() => change(() => api('DELETE', `/groups/${enc(g.name)}`))} />
 				</div>
 				<div class="row">
 					{#each s.people as p (p.key)}
@@ -51,18 +51,18 @@
 				</div>
 			</article>
 		{:else}
-			<p class="muted">Групп пока нет.</p>
+			<p class="muted">No groups yet.</p>
 		{/each}
 	</div>
 </section>
 
 <section class="panel">
-	<h2>Новая группа</h2>
+	<h2>New group</h2>
 	<form class="row" onsubmit={add}>
 		<label>
-			Имя
-			<input bind:value={name} required pattern="[a-z0-9][a-z0-9\-]{'{0,62}'}" placeholder="например, club" />
+			Name
+			<input bind:value={name} required pattern="[a-z0-9][a-z0-9\-]{'{0,62}'}" placeholder="for example, club" />
 		</label>
-		<button disabled={hub.busy}>Добавить</button>
+		<button disabled={hub.busy}>Add</button>
 	</form>
 </section>

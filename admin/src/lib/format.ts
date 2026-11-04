@@ -1,5 +1,5 @@
-const day = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
-const moment = new Intl.DateTimeFormat('ru-RU', {
+const day = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const moment = new Intl.DateTimeFormat('en-GB', {
 	day: 'numeric',
 	month: 'short',
 	hour: '2-digit',

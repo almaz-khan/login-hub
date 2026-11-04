@@ -60,7 +60,7 @@ func TestEnrollByLink(t *testing.T) {
 	// Bob, on his own phone, not logged in anywhere
 	phone := e.browser()
 	resp := phone.get(e.url + "/enroll?t=" + token)
-	if page := body(resp); resp.StatusCode != http.StatusOK || !strings.Contains(page, "Для <b>Боб</b>") || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "script-src 'sha256-") {
+	if page := body(resp); resp.StatusCode != http.StatusOK || !strings.Contains(page, "For <b>Bob</b>") || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "script-src 'sha256-") {
 		t.Fatalf("enroll page: %d %s", resp.StatusCode, page)
 	}
 	soft := newSoftAuthenticator(e.url, "localhost")
@@ -72,11 +72,11 @@ func TestEnrollByLink(t *testing.T) {
 		t.Fatalf("label %q", label)
 	}
 	e.app.Load().wg.Wait()
-	if m := e.bot.messages(); len(m) != 1 || !strings.Contains(m[0]["text"].(string), "Новый passkey: Bob") || m[0]["chat_id"] != alice {
+	if m := e.bot.messages(); len(m) != 1 || !strings.Contains(m[0]["text"].(string), "New passkey: Bob") || m[0]["chat_id"] != alice {
 		t.Fatalf("bot: %v", m)
 	}
 	// the new passkey already logs him in on that phone, and works for logins later
-	if page := body(phone.get(e.url + "/")); !strings.Contains(page, "<b>Боб</b>, через passkey") {
+	if page := body(phone.get(e.url + "/")); !strings.Contains(page, "<b>Bob</b>, with passkey") {
 		t.Fatal(page)
 	}
 	nextOf(t, e.passkey(e.browser(), soft, "/"))
@@ -107,7 +107,7 @@ func TestEnrollLinkRaces(t *testing.T) {
 	id, _ := b64.DecodeString(o.Options.Response.User.ID.(string))
 	o.Options.Response.User.ID = protocol.URLEncodedBase64(id)
 	late := a.postJSON(e.url+"/enroll/verify", map[string]any{"challenge": o.Challenge, "label": "second", "credential": json.RawMessage(newSoftAuthenticator(e.url, "localhost").register(o.Options))})
-	if late.StatusCode != http.StatusForbidden || !strings.Contains(body(late), "использована") {
+	if late.StatusCode != http.StatusForbidden || !strings.Contains(body(late), "already used") {
 		t.Fatalf("second device: %d", late.StatusCode)
 	}
 	var n int
@@ -126,7 +126,7 @@ func TestEnrollLinkRaces(t *testing.T) {
 func TestEnrollSelf(t *testing.T) {
 	e := setup(t)
 	b := e.browser()
-	if resp := b.get(e.url + "/enroll"); resp.StatusCode != http.StatusForbidden || !strings.Contains(body(resp), "Сначала войди") {
+	if resp := b.get(e.url + "/enroll"); resp.StatusCode != http.StatusForbidden || !strings.Contains(body(resp), "Sign in first") {
 		t.Fatalf("not logged in: %d", resp.StatusCode)
 	}
 	if resp := e.register(b, newSoftAuthenticator(e.url, "localhost"), "", "x"); resp.StatusCode != http.StatusForbidden {

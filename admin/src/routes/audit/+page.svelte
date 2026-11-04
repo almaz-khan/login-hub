@@ -27,11 +27,11 @@
 </script>
 
 <section class="panel">
-	<h1>Журнал</h1>
-	<p class="muted small">Каждое изменение: кто, когда и что. Входы и отказы — в логе хаба на Railway.</p>
+	<h1>Audit log</h1>
+	<p class="muted small">Every change: who, when and what. Sign-ins and refusals are in the hub's log on Railway.</p>
 	<div class="scroll">
 		<table>
-			<thead><tr><th>Когда</th><th>Кто</th><th>Что</th><th>Подробно</th></tr></thead>
+			<thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead>
 			<tbody>
 				{#each entries as a (a.id)}
 					<tr><td>{when(a.at)}</td><td>{a.actor}</td><td>{a.action}</td><td class="mono">{a.detail}</td></tr>
@@ -40,6 +40,6 @@
 		</table>
 	</div>
 	{#if more}
-		<div><button class="ghost" onclick={load} disabled={loading}>Ещё</button></div>
+		<div><button class="ghost" onclick={load} disabled={loading}>More</button></div>
 	{/if}
 </section>

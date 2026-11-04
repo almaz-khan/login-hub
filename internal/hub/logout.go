@@ -1,7 +1,7 @@
 package hub
 
 // Logout everywhere. An app clears its own cookie and sends people to GET /logout?client_id=…
-// &post_logout_redirect_uri=…; the hub asks «Выйти на всех сайтах?», and the button posts back.
+// &post_logout_redirect_uri=…; the hub asks "Sign out everywhere?", and the button posts back.
 // The return address is used only if it is listed for that app, exactly.
 
 import (
@@ -69,7 +69,7 @@ func (a *Server) logout(w http.ResponseWriter, r *http.Request) {
 	same := site == "same-origin" || site == "" && origin == a.issuer
 	if !same {
 		a.log.Printf("logout refused: origin %q, fetch site %q", origin, site)
-		text(w, http.StatusForbidden, "Выйти можно только со страницы входа")
+		text(w, http.StatusForbidden, "Signing out works only from the sign-in page")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)

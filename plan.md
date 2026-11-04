@@ -75,11 +75,11 @@ What `/authorize` does (access is read from the database on every request, never
 | Session | App accepts | Result |
 |---|---|---|
 | none | one method | that method's login screen |
-| none | both | a chooser: «Войти через Telegram» / «Войти с passkey» |
+| none | both | a chooser: "Sign in with Telegram" / "Sign in with a passkey" |
 | proven with an accepted method | | straight back with a code (silent) |
 | proven only with a method the app doesn't accept | | step-up with that app's methods, same person required |
-| person not allowed, or an unknown Telegram account | | «нет доступа» page naming the app; the bot messages `notify` (once an hour per person and app) |
-| passkey-only app, person has no passkey | | «для этого сайта нужен passkey» |
+| person not allowed, or an unknown Telegram account | | "No access" page naming the app; the bot messages `notify` (once an hour per person and app) |
+| passkey-only app, person has no passkey | | "Passkey needed" |
 
 `prompt=none`: `login_required` when a login or step-up would be needed, `access_denied` when not allowed.
 
@@ -107,7 +107,7 @@ What `/authorize` does (access is read from the database on every request, never
 | `POST /token` | Client secret + code + redirect URL + PKCE verifier → `id_token` (5 min) and an `access_token` (client libraries require one; nothing accepts it) |
 | `GET /login/telegram`, `GET /callback` | The Telegram login (`/callback` is the URL registered in @BotFather) |
 | `GET /login`, passkey endpoints | Chooser, passkey login and enrollment (phases 2–4) |
-| `GET /logout`, `POST /logout` | «Выйти на всех сайтах?»; the POST is same-origin only (every `*.almaz.dev` app is same-site, so not «same-site») |
+| `GET /logout`, `POST /logout` | "Sign out everywhere?"; the POST is same-origin only (every `*.almaz.dev` app is same-site, so not "same-site") |
 | `GET /admin/backup` | Database snapshot, admin only |
 | `/admin/…` | The admin UI and its API (last phase) |
 | `GET /healthz` | `200 ok`, or `503` when anything is missing or broken |
@@ -159,7 +159,7 @@ Rules that matter:
    already theirs).
 
 Removing a passkey: for now `/admin`, a server-rendered page listing people and passkeys
-(«Ссылка для passkey», «Удалить»); later the admin UI.
+("Passkey link", "Delete"); later the admin UI.
 
 ## Admin UI (last phase)
 
@@ -195,7 +195,7 @@ browsers apply form-action to the redirect after the POST too.
 ### If the hub is down
 
 People already logged in keep using every app until their app session needs a re-check. Only new
-logins and re-checks fail, on the app's «не получилось войти» page.
+logins and re-checks fail, on the app's "sign-in failed" page.
 
 ## Running Club changes (phase 5)
 

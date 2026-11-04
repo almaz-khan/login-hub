@@ -36,21 +36,21 @@
 	}}
 >
 	{@render children?.()}
-	<label>Название<input bind:value={draft.name} required /></label>
+	<label>Name<input bind:value={draft.name} required /></label>
 	<div class="grid2">
 		<label>
-			Адреса возврата после входа
+			Redirect URLs after sign-in
 			<textarea bind:value={draft.redirects} required placeholder="https://app.almaz.dev/auth/callback"></textarea>
-			<span class="muted">По одному в строке, точно как их шлёт сайт. Только https.</span>
+			<span class="muted">One per line, exactly as the app sends them. https only.</span>
 		</label>
 		<label>
-			Адреса после выхода
+			Return URLs after sign-out
 			<textarea bind:value={draft.logouts} placeholder="https://app.almaz.dev/"></textarea>
-			<span class="muted">Необязательно.</span>
+			<span class="muted">Optional.</span>
 		</label>
 	</div>
 	<fieldset class="stack">
-		<legend>Как входить</legend>
+		<legend>Sign-in methods</legend>
 		<div class="row">
 			{#each methods as m (m)}
 				<label class="check">
@@ -61,12 +61,12 @@
 		</div>
 	</fieldset>
 	<fieldset class="stack">
-		<legend>Кто может открыть</legend>
+		<legend>Who may open it</legend>
 		<div class="row">
 			{#each groups as g (g.name)}
 				<label class="check">
 					<input type="checkbox" checked={draft.allow.includes(`group:${g.name}`)} onchange={(e) => (draft.allow = toggle(draft.allow, `group:${g.name}`, e.currentTarget.checked))} />
-					группа <span class="mono">{g.name}</span>
+					group <span class="mono">{g.name}</span>
 				</label>
 			{/each}
 		</div>

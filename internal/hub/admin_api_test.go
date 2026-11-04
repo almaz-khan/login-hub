@@ -116,7 +116,7 @@ func TestAdminPeopleAndGroups(t *testing.T) {
 	e := setup(t)
 	admin := e.adminBrowser()
 
-	e.mustCall(admin, http.MethodPost, "/admin/api/people", map[string]string{"key": "Dave", "name": " Дэйв ", "telegram_id": dave})
+	e.mustCall(admin, http.MethodPost, "/admin/api/people", map[string]string{"key": "Dave", "name": " Dave D ", "telegram_id": dave})
 	for name, in := range map[string]map[string]string{
 		"bad key":       {"key": "Dave Smith", "name": "x"},
 		"no name":       {"key": "Eve", "name": " "},
@@ -150,17 +150,17 @@ func TestAdminPeopleAndGroups(t *testing.T) {
 			dv = p
 		}
 	}
-	if dv.Name != "Дэйв" || strings.Join(dv.Groups, ",") != "friends" || strings.Join(dv.Apps, ",") != "stub" || dv.LastSeen == 0 {
+	if dv.Name != "Dave D" || strings.Join(dv.Groups, ",") != "friends" || strings.Join(dv.Apps, ",") != "stub" || dv.LastSeen == 0 {
 		t.Fatalf("Dave: %+v", dv)
 	}
 
 	// edits
-	e.mustCall(admin, http.MethodPut, "/admin/api/people/Dave", map[string]string{"name": "Дэйв Д", "telegram_id": ""})
+	e.mustCall(admin, http.MethodPut, "/admin/api/people/Dave", map[string]string{"name": "Dave D", "telegram_id": ""})
 	if status, _ := e.call(admin, http.MethodPut, "/admin/api/people/Nobody", map[string]string{"name": "x"}); status != http.StatusBadRequest {
 		t.Errorf("edit nobody: %d", status)
 	}
 	// the admin has a passkey (the admin UI needs one), so a Telegram id is optional for them too
-	e.mustCall(admin, http.MethodPut, "/admin/api/people/Alice", map[string]string{"name": "Алиса", "telegram_id": ""})
+	e.mustCall(admin, http.MethodPut, "/admin/api/people/Alice", map[string]string{"name": "Alice", "telegram_id": ""})
 	if status, _ := e.call(admin, http.MethodDelete, "/admin/api/people/Alice", nil); status != http.StatusBadRequest {
 		t.Errorf("delete admin: %d", status)
 	}
@@ -193,7 +193,7 @@ func TestAdminApps(t *testing.T) {
 	e := setup(t)
 	admin := e.adminBrowser()
 	app := map[string]any{
-		"id": "new-app", "name": "Новый сайт", "redirect_uris": []string{"http://[::1]:7/auth/callback"},
+		"id": "new-app", "name": "New app", "redirect_uris": []string{"http://[::1]:7/auth/callback"},
 		"post_logout_redirect_uris": []string{}, "login": []string{"telegram", "passkey"}, "allow": []string{"Alice"},
 	}
 	out := e.mustCall(admin, http.MethodPost, "/admin/api/apps", app)
@@ -287,7 +287,7 @@ func TestAdminUIServing(t *testing.T) {
 	resp := admin.get(e.url + "/admin")
 	if e.app.Load().ui.index == nil {
 		// a hub built without the UI says so
-		if resp.StatusCode != http.StatusServiceUnavailable || !strings.Contains(body(resp), "Админка не собрана") {
+		if resp.StatusCode != http.StatusServiceUnavailable || !strings.Contains(body(resp), "The admin UI isn't built") {
 			t.Fatalf("not built: %d", resp.StatusCode)
 		}
 		return

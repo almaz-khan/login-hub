@@ -1,4 +1,4 @@
-// The login hub: «Войти через Telegram» once, for every app, as a small OpenID Connect provider.
+// The login hub: sign in once (Telegram or a passkey), for every app, as a small OpenID Connect provider.
 //
 // Apps send people to /authorize; the hub logs them in with Telegram if it has no session for them
 // (/login → oauth.telegram.org → /callback), checks access.json for that app on every /authorize,
@@ -254,7 +254,7 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	handler, allow := a.route(p, r.Method)
 	switch {
 	case allow == "":
-		text(w, http.StatusNotFound, "Не найдено")
+		text(w, http.StatusNotFound, "Not found")
 	case handler == nil:
 		h.Set("Allow", allow)
 		text(w, http.StatusMethodNotAllowed, "")

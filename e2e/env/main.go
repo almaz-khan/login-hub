@@ -91,9 +91,9 @@ func main() {
 	seed, _ := json.Marshal(map[string]any{
 		"notify": "Alice",
 		"people": map[string]any{
-			"Alice": map[string]string{"name": "Алиса", "telegram": "111"},
-			"Bob":   map[string]string{"name": "Боб", "telegram": "222"},
-			"Carol": map[string]string{"name": "Кэрол"},
+			"Alice": map[string]string{"name": "Alice", "telegram": "111"},
+			"Bob":   map[string]string{"name": "Bob", "telegram": "222"},
+			"Carol": map[string]string{"name": "Carol"},
 		},
 		"groups": map[string][]string{"club": {"Alice"}},
 		"apps":   seedApps,
@@ -166,7 +166,7 @@ func (f *fakeTelegram) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for _, a := range accounts {
 			q := r.URL.Query()
 			q.Set("who", a.ID)
-			fmt.Fprintf(&b, `<p><a href="/pick?%s">Войти как %s</a></p>`, html.EscapeString(q.Encode()), html.EscapeString(a.Name))
+			fmt.Fprintf(&b, `<p><a href="/pick?%s">Sign in as %s</a></p>`, html.EscapeString(q.Encode()), html.EscapeString(a.Name))
 		}
 		page(w, "Fake Telegram", b.String())
 	case "/pick":
@@ -285,11 +285,11 @@ func (p *rp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/":
 		var s rpSession
 		if c, err := r.Cookie("rp_session_" + p.app.ID); err == nil && p.unsign(c.Value, &s) {
-			page(w, p.app.Name, fmt.Sprintf(`<h1>%s</h1><p id="who" data-sub="%s" data-amr="%s">Вошёл: %s</p><form method="post" action="/logout"><button id="logout">Выйти</button></form>`,
+			page(w, p.app.Name, fmt.Sprintf(`<h1>%s</h1><p id="who" data-sub="%s" data-amr="%s">Signed in: %s</p><form method="post" action="/logout"><button id="logout">Sign out</button></form>`,
 				html.EscapeString(p.app.Name), html.EscapeString(s.Sub), html.EscapeString(strings.Join(s.AMR, ",")), html.EscapeString(s.Name)))
 			return
 		}
-		page(w, p.app.Name, fmt.Sprintf(`<h1>%s</h1><p id="anon">Не вошёл</p><a id="login" href="/login">Войти</a>`, html.EscapeString(p.app.Name)))
+		page(w, p.app.Name, fmt.Sprintf(`<h1>%s</h1><p id="anon">Not signed in</p><a id="login" href="/login">Sign in</a>`, html.EscapeString(p.app.Name)))
 	case "/login":
 		st := map[string]string{"state": random(), "nonce": random(), "verifier": oauth2.GenerateVerifier()}
 		http.SetCookie(w, &http.Cookie{Name: "rp_login_" + p.app.ID, Value: p.sign(st), Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 600})

@@ -39,13 +39,13 @@ func (a *Server) backup(w http.ResponseWriter, r *http.Request) {
 	if !a.backupToken(r) {
 		// a download started by another site's link or form is refused, even for the admin
 		if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
-			text(w, http.StatusForbidden, "Только со страницы хаба")
+			text(w, http.StatusForbidden, "Only from the hub's own pages")
 			return
 		}
 		p := a.admin(r)
 		if p == nil {
 			a.log.Printf("backup refused")
-			text(w, http.StatusForbidden, "Только для админа")
+			text(w, http.StatusForbidden, "Admin only")
 			return
 		}
 		who = p.Key

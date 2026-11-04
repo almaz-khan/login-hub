@@ -1,5 +1,5 @@
 <script lang="ts">
-	let { text, label = 'Скопировать' }: { text: string; label?: string } = $props();
+	let { text, label = 'Copy' }: { text: string; label?: string } = $props();
 	let done = $state(false);
 
 	async function copy() {
@@ -13,4 +13,4 @@
 	}
 </script>
 
-<div><button class="ghost" type="button" onclick={copy}>{done ? 'Скопировано' : label}</button></div>
+<div><button class="ghost" type="button" onclick={copy}>{done ? 'Copied' : label}</button></div>

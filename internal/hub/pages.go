@@ -66,8 +66,8 @@ func page(w http.ResponseWriter, status int, body string) { pageCSP(w, status, b
 const passkeyJS = `const d=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0)).buffer;
 const u=a=>btoa(String.fromCharCode(...new Uint8Array(a))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 const $=id=>document.getElementById(id),msg=$('msg');
-const post=async(path,body)=>{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Не получилось');return j};
-const run=(btn,fn)=>btn&&btn.addEventListener('click',async()=>{btn.disabled=true;msg.textContent='';try{await fn()}catch(e){msg.textContent=e.name==='NotAllowedError'?'Отменено. Попробуй ещё раз.':e.name==='InvalidStateError'?'Этот passkey уже добавлен.':e.message;btn.disabled=false}});
+const post=async(path,body)=>{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Something went wrong');return j};
+const run=(btn,fn)=>btn&&btn.addEventListener('click',async()=>{btn.disabled=true;msg.textContent='';try{await fn()}catch(e){msg.textContent=e.name==='NotAllowedError'?'Cancelled. Try again.':e.name==='InvalidStateError'?'This passkey is already added.':e.message;btn.disabled=false}});
 run($('pk'),async()=>{const o=await post('/login/passkey/options',{});const p=o.options.publicKey;p.challenge=d(p.challenge);
 const c=await navigator.credentials.get({publicKey:p});const r=c.response;
 const j=await post('/login/passkey/verify',{challenge:o.challenge,next:$('pk').dataset.next,credential:{id:c.id,rawId:u(c.rawId),type:c.type,response:{clientDataJSON:u(r.clientDataJSON),authenticatorData:u(r.authenticatorData),signature:u(r.signature),userHandle:r.userHandle?u(r.userHandle):null},clientExtensionResults:c.getClientExtensionResults()}});
@@ -99,18 +99,18 @@ func layout(title, body string) string { return layoutClass("", title, body) }
 
 func layoutClass(class, title, body string) string {
 	return `<!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
-<title>` + title + ` · Вход</title>
+<title>` + title + ` · Sign in</title>
 <style>` + css + `</style>
 </head>
 <body>
 <main` + class + `>
-<div class="kick">Один вход</div>
+<div class="kick">One sign-in</div>
 ` + body + `
 </main>
 </body>
@@ -120,18 +120,18 @@ func layoutClass(class, title, body string) string {
 var e = html.EscapeString
 
 var (
-	methodButton = map[string]string{"telegram": "Войти через Telegram", "passkey": "Войти с passkey"}
-	methodOther  = map[string]string{"telegram": "Другой аккаунт Telegram", "passkey": "Другой passkey"}
+	methodButton = map[string]string{"telegram": "Sign in with Telegram", "passkey": "Sign in with a passkey"}
+	methodOther  = map[string]string{"telegram": "Another Telegram account", "passkey": "Another passkey"}
 	methodName   = map[string]string{"telegram": "Telegram", "passkey": "passkey"}
 )
 
-// methodsText: «Telegram», «passkey» or «Telegram или passkey»
+// methodsText: "Telegram", "passkey" or "Telegram or passkey"
 func methodsText(methods []string) string {
 	names := make([]string, len(methods))
 	for i, m := range methods {
 		names[i] = methodName[m]
 	}
-	return strings.Join(names, " или ")
+	return strings.Join(names, " or ")
 }
 
 // loginButton: a login with method, then on to next (an /authorize request)
@@ -148,7 +148,7 @@ func loginButton(method, label, next string, alt bool) string {
 }
 
 func account(id identity) string {
-	name := "без имени"
+	name := "no name"
 	switch {
 	case id.person != nil:
 		name = id.person.Name
@@ -163,32 +163,32 @@ func account(id identity) string {
 }
 
 var (
-	pageClosed = layout("Закрыто", `<h1>Вход закрыт</h1>
-<p>Вход ещё не настроен или настроен с ошибкой, поэтому сейчас никто войти не может.</p>`)
+	pageClosed = layout("Closed", `<h1>Sign-in is closed</h1>
+<p>Sign-in isn't set up yet, or is set up wrong, so nobody can sign in right now.</p>`)
 
-	pageBadLink = layout("Неверная ссылка", `<h1>Неверная ссылка для входа</h1>
-<p>Сайт, с которого ты пришёл, прислал ссылку, которой здесь не знают. Вернись на сайт и попробуй ещё раз. Если не выйдет, напиши тому, кто дал ссылку.</p>`)
+	pageBadLink = layout("Wrong link", `<h1>Wrong sign-in link</h1>
+<p>The site you came from sent a link this hub doesn't know. Go back to the site and try again. If that doesn't work, tell whoever gave you the link.</p>`)
 )
 
 func pageHome(id identity, admin bool) string {
 	if !id.proven() {
-		return layout("Вход", `<h1>Один вход на все сайты</h1>
-<p>Сайты отправляют сюда, чтобы узнать, кто ты. Войти нужно один раз, дальше сайты открываются сами.</p>
-<p class="note">Сюда приходят с сайта: открой нужный сайт, он сам пришлёт на вход.</p>
-<a class="btn alt" href="/admin">Админка</a>`)
+		return layout("Sign in", `<h1>One sign-in for every site</h1>
+<p>Sites send you here to find out who you are. Sign in once, and the sites open by themselves after that.</p>
+<p class="note">You get here from a site: open the site you want, and it sends you here to sign in.</p>
+<a class="btn alt" href="/admin">Admin</a>`)
 	}
-	return layout("Вход", `<h1>Ты вошёл</h1>
-<p>Как `+account(id)+`, через `+methodsText(id.methods())+`. Сайты, куда у тебя есть доступ, откроются сами.</p>
-`+homeLinks(id, admin)+`<a class="btn alt" href="/logout">Выйти на всех сайтах</a>`)
+	return layout("Sign in", `<h1>You're signed in</h1>
+<p>As `+account(id)+`, with `+methodsText(id.methods())+`. Sites you have access to open by themselves.</p>
+`+homeLinks(id, admin)+`<a class="btn alt" href="/logout">Sign out everywhere</a>`)
 }
 
 func homeLinks(id identity, admin bool) string {
 	s := ""
 	if id.person != nil {
-		s += `<a class="btn alt" href="/enroll">Добавить passkey на этом устройстве</a>`
+		s += `<a class="btn alt" href="/enroll">Add a passkey on this device</a>`
 	}
 	if admin {
-		s += `<a class="btn alt" href="/admin">Админка</a>`
+		s += `<a class="btn alt" href="/admin">Admin</a>`
 	}
 	return s
 }
@@ -197,78 +197,78 @@ func homeLinks(id identity, admin bool) string {
 func pageChooser(c *store.App, id identity, next string, methods []string) string {
 	var b strings.Builder
 	if id.proven() {
-		fmt.Fprintf(&b, `<p>Ты вошёл как %s через %s, а для «%s» нужен вход через %s.</p>`, account(id), methodsText(id.methods()), e(c.Name), methodsText(methods))
+		fmt.Fprintf(&b, `<p>You're signed in as %s with %s, but “%s” needs a sign-in with %s.</p>`, account(id), methodsText(id.methods()), e(c.Name), methodsText(methods))
 	} else {
-		fmt.Fprintf(&b, `<p>Сайт «%s» узнает, кто ты. Войти нужно один раз, дальше сайты открываются сами.</p>`, e(c.Name))
+		fmt.Fprintf(&b, `<p>“%s” will find out who you are. Sign in once, and sites open by themselves after that.</p>`, e(c.Name))
 	}
 	for i, m := range methods {
 		b.WriteString(loginButton(m, methodButton[m], next, i > 0))
 	}
-	return layout("Вход", `<h1>Вход на «`+e(c.Name)+`»</h1>
+	return layout("Sign in", `<h1>Sign in to “`+e(c.Name)+`”</h1>
 `+b.String())
 }
 
 func pagePasskey(next string) string {
-	return layout("Вход с passkey", `<h1>Вход с passkey</h1>
-<p>Телефон или компьютер попросит Face ID, отпечаток или код устройства.</p>
-<button class="btn" type="button" id="pk" data-next="`+e(next)+`">Войти с passkey</button>
+	return layout("Sign in with a passkey", `<h1>Sign in with a passkey</h1>
+<p>Your phone or computer will ask for Face ID, a fingerprint or the device passcode.</p>
+<button class="btn" type="button" id="pk" data-next="`+e(next)+`">Sign in with a passkey</button>
 <p class="note" id="msg" role="status" aria-live="polite"></p>
 <script>`+passkeyJS+`</script>`)
 }
 
 var (
-	pageLinkUsed = layout("Ссылка не работает", `<h1>Ссылка не работает</h1>
-<p>Ссылка для passkey работает один раз и 24 часа. Эта уже использована или устарела: попроси новую.</p>`)
+	pageLinkUsed = layout("Link doesn't work", `<h1>This link doesn't work</h1>
+<p>A passkey link works once, for 24 hours. This one was already used or has expired: ask for a new one.</p>`)
 
-	pageLoginFirst = layout("Сначала войди", `<h1>Сначала войди</h1>
-<p>Добавить passkey можно по ссылке от админа или войдя на любой сайт, куда у тебя есть доступ.</p>`)
+	pageLoginFirst = layout("Sign in first", `<h1>Sign in first</h1>
+<p>You can add a passkey with a link from the admin, or after signing in to any site you have access to.</p>`)
 
-	pageAdminOnly = layout("Только для админа", `<h1>Только для админа</h1>
-<p>Ты вошёл, но не как тот, кто раздаёт доступ. Выйди и войди его аккаунтом.</p>
-<a class="btn alt" href="/logout">Выйти</a>`)
+	pageAdminOnly = layout("Admin only", `<h1>Admin only</h1>
+<p>You're signed in, but not as the person who gives out access. Sign out and sign in with their account.</p>
+<a class="btn alt" href="/logout">Sign out</a>`)
 
-	pageUINotBuilt = layout("Админка не собрана", `<h1>Админка не собрана</h1>
-<p>В этой сборке хаба нет админки: <code>cd admin &amp;&amp; npm ci &amp;&amp; npm run build</code>, потом собери хаб заново.</p>`)
+	pageUINotBuilt = layout("Admin UI not built", `<h1>The admin UI isn't built</h1>
+<p>This build of the hub has no admin UI: run <code>cd admin &amp;&amp; npm ci &amp;&amp; npm run build</code>, then build the hub again.</p>`)
 )
 
 func pageEnroll(p *store.Person, token string) string {
-	return layout("Новый passkey", `<h1>Новый passkey</h1>
+	return layout("New passkey", `<h1>New passkey</h1>
 <div id="form" class="stack">
-<p>Для <b>`+e(p.Name)+`</b>. Телефон или компьютер попросит Face ID, отпечаток или код устройства, и дальше вход на сайты будет таким же.</p>
-<label>Как назвать это устройство<input id="label" maxlength="60" placeholder="Например, iPhone" autocomplete="off"></label>
-<button class="btn" type="button" id="enroll" data-token="`+e(token)+`">Создать passkey</button>
+<p>For <b>`+e(p.Name)+`</b>. Your phone or computer will ask for Face ID, a fingerprint or the device passcode, and signing in to sites will work the same way from then on.</p>
+<label>Name this device<input id="label" maxlength="60" placeholder="For example, iPhone" autocomplete="off"></label>
+<button class="btn" type="button" id="enroll" data-token="`+e(token)+`">Create passkey</button>
 <p class="note" id="msg" role="status" aria-live="polite"></p>
 </div>
-<div id="done" hidden><p>Готово: passkey сохранён, и ты уже вошёл с ним на этом устройстве.</p><a class="btn alt" href="/">На главную</a></div>
+<div id="done" hidden><p>Done: the passkey is saved, and you're already signed in with it on this device.</p><a class="btn alt" href="/">Home</a></div>
 <script>`+passkeyJS+`</script>`)
 }
 
 // pageAdminLogin: the admin UI asks for a passkey; Telegram never opens it
 func pageAdminLogin() string {
-	return layout("Админка", `<h1>Админка</h1>
-<p>Для того, кто раздаёт доступ. Вход только с passkey.</p>
+	return layout("Admin", `<h1>Admin</h1>
+<p>For the person who gives out access. Passkey sign-in only.</p>
 `+loginButton("passkey", methodButton["passkey"], "/admin", false))
 }
 
 // pageTelegramOff: a Telegram login asked for on a hub without one; c is the app, if known
 func pageTelegramOff(c *store.App) string {
-	what := "Вход через Telegram"
+	what := "Sign-in with Telegram isn't set up here yet."
 	if c != nil {
-		what = "«" + e(c.Name) + "» принимает только вход через Telegram, а он"
+		what = "“" + e(c.Name) + "” only takes a Telegram sign-in, and that isn't set up here yet."
 	}
-	return layout("Telegram выключен", `<h1>Telegram пока выключен</h1>
-<p>`+what+` здесь ещё не настроен. Войти можно с passkey, если сайт его принимает.</p>`)
+	return layout("Telegram is off", `<h1>Telegram is off for now</h1>
+<p>`+what+` You can sign in with a passkey if the site takes one.</p>`)
 }
 
 // pageNoPasskey: a passkey-only app, for someone the hub knows but who has no passkey yet
 func pageNoPasskey(c *store.App, id identity) string {
-	return layout("Нужен passkey", `<h1>Нужен passkey</h1>
-<p>Ты вошёл как `+account(id)+`, но в «`+e(c.Name)+`» входят только с passkey, а у тебя его ещё нет. Попроси ссылку, чтобы его создать.</p>`)
+	return layout("Passkey needed", `<h1>Passkey needed</h1>
+<p>You're signed in as `+account(id)+`, but “`+e(c.Name)+`” only takes a passkey sign-in, and you don't have a passkey yet. Ask for a link to create one.</p>`)
 }
 
 func pageFailed(next string) string {
-	return layout("Не получилось войти", `<h1>Не получилось войти</h1>
-<p>Вход не подтвердился, или ссылка для входа устарела. Попробуй ещё раз.</p>
+	return layout("Sign-in failed", `<h1>Sign-in failed</h1>
+<p>The sign-in wasn't confirmed, or the sign-in link has expired. Try again.</p>
 `+loginButton("telegram", methodButton["telegram"], next, false))
 }
 
@@ -277,8 +277,8 @@ func pageDenied(c *store.App, id identity, next string, methods []string) string
 	for _, m := range methods {
 		b.WriteString(loginButton(m, methodOther[m], next, true))
 	}
-	return layout("Нет доступа", `<h1>Нет доступа</h1>
-<p>У аккаунта `+account(id)+` нет доступа к сайту «`+e(c.Name)+`». Если он нужен, напиши тому, кто прислал ссылку.</p>
+	return layout("No access", `<h1>No access</h1>
+<p>The account `+account(id)+` has no access to “`+e(c.Name)+`”. If you need it, tell whoever sent you the link.</p>
 `+b.String())
 }
 
@@ -293,17 +293,17 @@ func pageLogout(id identity, t logoutTarget) string {
 	if t.state != "" {
 		hidden += `<input type="hidden" name="state" value="` + e(t.state) + `">`
 	}
-	return layout("Выход", `<h1>Выйти на всех сайтах?</h1>
-<p>Ты вошёл как `+account(id)+`. Это устройство забудет вход, и чтобы вернуться на любой сайт, понадобится войти снова.</p>
-<p class="note">Сайты, открытые сейчас, попросят войти заново не позже чем через сутки.</p>
-<form method="post" action="/logout">`+hidden+`<button class="btn" type="submit">Выйти на всех сайтах</button></form>`)
+	return layout("Sign out", `<h1>Sign out everywhere?</h1>
+<p>You're signed in as `+account(id)+`. This device will forget the sign-in, and you'll need to sign in again to get back to any site.</p>
+<p class="note">Sites open right now will ask you to sign in again within a day.</p>
+<form method="post" action="/logout">`+hidden+`<button class="btn" type="submit">Sign out everywhere</button></form>`)
 }
 
 func pageLoggedOut(t logoutTarget) string {
 	back := ""
 	if t.back != "" {
-		back = `<a class="btn alt" href="` + e(t.url()) + `">Вернуться на «` + e(t.app.Name) + `»</a>`
+		back = `<a class="btn alt" href="` + e(t.url()) + `">Back to “` + e(t.app.Name) + `”</a>`
 	}
-	return layout("Выход", `<h1>Ты вышел</h1>
-<p>Это устройство больше не помнит вход.</p>`+back)
+	return layout("Sign out", `<h1>You're signed out</h1>
+<p>This device no longer remembers the sign-in.</p>`+back)
 }

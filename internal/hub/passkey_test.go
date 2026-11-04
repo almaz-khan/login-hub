@@ -144,7 +144,7 @@ func TestPasskeyLogin(t *testing.T) {
 	e.rp("both").login(b2)
 	// a Telegram-only app asks for Telegram on top
 	resp := b2.get(e.rp("running-club").start().url)
-	if page := body(resp); resp.StatusCode != http.StatusOK || !strings.Contains(page, "нужен вход через Telegram") || strings.Contains(page, "/login/passkey") {
+	if page := body(resp); resp.StatusCode != http.StatusOK || !strings.Contains(page, "needs a sign-in with Telegram") || strings.Contains(page, "/login/passkey") {
 		t.Fatalf("step-up to Telegram: %d %s", resp.StatusCode, page)
 	}
 	// both proven, for the same person: amr says both
@@ -172,12 +172,12 @@ func TestPasskeyRefusals(t *testing.T) {
 	}
 
 	soft.forge = true
-	refused("forged signature", e.passkey(b, soft, "/"), http.StatusForbidden, "не подтвердился")
+	refused("forged signature", e.passkey(b, soft, "/"), http.StatusForbidden, "couldn't be verified")
 	soft.forge = false
 
 	stranger := newSoftAuthenticator(e.url, "localhost")
 	stranger.userHandle = []byte("x")
-	refused("unknown credential", e.passkey(b, stranger, "/"), http.StatusForbidden, "не знают")
+	refused("unknown credential", e.passkey(b, stranger, "/"), http.StatusForbidden, "isn't known here")
 
 	for name, mod := range map[string]func(*softAuthenticator){
 		"wrong origin": func(s *softAuthenticator) { s.origin = "https://evil.example" },
@@ -186,7 +186,7 @@ func TestPasskeyRefusals(t *testing.T) {
 	} {
 		c := *soft
 		mod(&c)
-		refused(name, e.passkey(b, &c, "/"), http.StatusForbidden, "не подтвердился")
+		refused(name, e.passkey(b, &c, "/"), http.StatusForbidden, "couldn't be verified")
 	}
 
 	// a challenge works once
@@ -194,17 +194,17 @@ func TestPasskeyRefusals(t *testing.T) {
 	answer := json.RawMessage(soft.authenticate(opts))
 	ok := b.postJSON(e.url+"/login/passkey/verify", map[string]any{"challenge": challenge, "next": "/", "credential": answer})
 	nextOf(t, ok)
-	refused("replayed", b.postJSON(e.url+"/login/passkey/verify", map[string]any{"challenge": challenge, "next": "/", "credential": answer}), http.StatusBadRequest, "устарел")
+	refused("replayed", b.postJSON(e.url+"/login/passkey/verify", map[string]any{"challenge": challenge, "next": "/", "credential": answer}), http.StatusBadRequest, "expired")
 
 	// and for 5 minutes
 	challenge, opts = e.options(b)
 	e.shift.Add(int64((challengeTTL + time.Second) / time.Second))
-	refused("expired", b.postJSON(e.url+"/login/passkey/verify", map[string]any{"challenge": challenge, "next": "/", "credential": json.RawMessage(soft.authenticate(opts))}), http.StatusBadRequest, "устарел")
+	refused("expired", b.postJSON(e.url+"/login/passkey/verify", map[string]any{"challenge": challenge, "next": "/", "credential": json.RawMessage(soft.authenticate(opts))}), http.StatusBadRequest, "expired")
 	e.shift.Store(0)
 
 	// only the hub's own page may ask
-	refused("cross-site options", b.postJSON(e.url+"/login/passkey/options", map[string]any{}, "Sec-Fetch-Site", "same-site"), http.StatusForbidden, "Только")
-	refused("form post", b.post(e.url+"/login/passkey/options", url.Values{}, "Sec-Fetch-Site", "same-origin"), http.StatusForbidden, "Только")
+	refused("cross-site options", b.postJSON(e.url+"/login/passkey/options", map[string]any{}, "Sec-Fetch-Site", "same-site"), http.StatusForbidden, "Only")
+	refused("form post", b.post(e.url+"/login/passkey/options", url.Values{}, "Sec-Fetch-Site", "same-origin"), http.StatusForbidden, "Only")
 	if resp := b.get(e.url + "/login/passkey/verify"); resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("GET verify: %d", resp.StatusCode)
 	}
@@ -235,7 +235,7 @@ func TestRemovedPasskeyEndsItsProof(t *testing.T) {
 	e.exec(`DELETE FROM passkeys WHERE person = 'Alice'`)
 	// the session cookie still has the proof, but the passkey behind it is gone
 	resp := b.get(e.rp("both").start().url)
-	if page := body(resp); resp.StatusCode != http.StatusOK || !strings.Contains(page, "Вход на «Both»") || strings.Contains(page, "Ты вошёл") {
+	if page := body(resp); resp.StatusCode != http.StatusOK || !strings.Contains(page, "Sign in to “Both”") || strings.Contains(page, "You're signed in") {
 		t.Fatalf("after removal: %d %s", resp.StatusCode, page)
 	}
 }
@@ -247,7 +247,7 @@ func TestProofsOfTwoPeopleDontMix(t *testing.T) {
 	b := e.browser()
 	e.rp("stub").login(b)              // Bob, by Telegram
 	nextOf(t, e.passkey(b, soft, "/")) // then Alice's passkey on the same browser
-	if page := body(b.get(e.url + "/")); !strings.Contains(page, "<b>Алиса</b>, через passkey") {
+	if page := body(b.get(e.url + "/")); !strings.Contains(page, "<b>Alice</b>, with passkey") {
 		t.Fatalf("home: %s", page)
 	}
 	// Bob's Telegram proof is gone: a Telegram-only app asks again rather than letting Alice in as Bob
@@ -257,7 +257,7 @@ func TestProofsOfTwoPeopleDontMix(t *testing.T) {
 		t.Fatalf("sub %s, telegram logins %d", idt.Subject, e.tg.authCount())
 	}
 	// and now the newer proof (Bob's Telegram) has replaced Alice's passkey
-	if page := body(b.get(e.url + "/")); !strings.Contains(page, "<b>Боб</b> (@bob), через Telegram") {
+	if page := body(b.get(e.url + "/")); !strings.Contains(page, "<b>Bob</b> (@bob), with Telegram") {
 		t.Fatalf("home after: %s", page)
 	}
 }

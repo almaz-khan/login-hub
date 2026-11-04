@@ -9,7 +9,7 @@ export async function api<T = { ok: true }>(method: string, path: string, body?:
 		credentials: 'same-origin'
 	});
 	const data = await res.json().catch(() => ({}));
-	if (!res.ok) throw new Error(data.error ?? `Хаб ответил ${res.status}`);
+	if (!res.ok) throw new Error(data.error ?? `The hub answered ${res.status}`);
 	return data as T;
 }
 

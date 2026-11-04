@@ -32,7 +32,7 @@ func newWebAuthn(issuer string) (*webauthn.WebAuthn, error) {
 	}
 	return webauthn.New(&webauthn.Config{
 		RPID:          u.Hostname(),
-		RPDisplayName: "Вход",
+		RPDisplayName: "Sign in",
 		RPOrigins:     []string{issuer},
 	})
 }
@@ -94,21 +94,21 @@ func jsonError(w http.ResponseWriter, status int, msg string) {
 
 func (a *Server) passkeyOptions(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		jsonError(w, http.StatusForbidden, "Только со страницы входа")
+		jsonError(w, http.StatusForbidden, "Only from the sign-in page")
 		return
 	}
 	// no allowCredentials: passkeys are discoverable, and listing ids would hand them to anyone
 	options, session, err := a.wa.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
 		a.log.Printf("passkey options: %v", err)
-		jsonError(w, http.StatusInternalServerError, "Не получилось начать вход")
+		jsonError(w, http.StatusInternalServerError, "Couldn't start the sign-in")
 		return
 	}
 	data, _ := json.Marshal(session)
 	id := random()
 	if err := a.store.PutChallenge(id, "login", data, "", challengeTTL); err != nil {
 		a.log.Printf("passkey options: %v", err)
-		jsonError(w, http.StatusServiceUnavailable, "Слишком много входов сразу, попробуй через минуту")
+		jsonError(w, http.StatusServiceUnavailable, "Too many sign-ins at once, try again in a minute")
 		return
 	}
 	jsonOut(w, http.StatusOK, map[string]any{"challenge": id, "options": options})
@@ -116,7 +116,7 @@ func (a *Server) passkeyOptions(w http.ResponseWriter, r *http.Request) {
 
 func (a *Server) passkeyVerify(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		jsonError(w, http.StatusForbidden, "Только со страницы входа")
+		jsonError(w, http.StatusForbidden, "Only from the sign-in page")
 		return
 	}
 	var in struct {
@@ -125,28 +125,28 @@ func (a *Server) passkeyVerify(w http.ResponseWriter, r *http.Request) {
 		Credential json.RawMessage `json:"credential"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&in); err != nil {
-		jsonError(w, http.StatusBadRequest, "Не получилось прочитать ответ passkey")
+		jsonError(w, http.StatusBadRequest, "Couldn't read the passkey's answer")
 		return
 	}
 	data, _, ok, err := a.store.TakeChallenge(in.Challenge, "login")
 	if err != nil {
 		a.log.Printf("passkey login: %v", err)
-		jsonError(w, http.StatusInternalServerError, "Не получилось войти")
+		jsonError(w, http.StatusInternalServerError, "Sign-in failed")
 		return
 	}
 	if !ok {
-		jsonError(w, http.StatusBadRequest, "Вход устарел. Попробуй ещё раз")
+		jsonError(w, http.StatusBadRequest, "The sign-in expired. Try again")
 		return
 	}
 	var session webauthn.SessionData
 	if err := json.Unmarshal(data, &session); err != nil {
-		jsonError(w, http.StatusInternalServerError, "Не получилось войти")
+		jsonError(w, http.StatusInternalServerError, "Sign-in failed")
 		return
 	}
 	parsed, err := protocol.ParseCredentialRequestResponseBytes(in.Credential)
 	if err != nil {
 		a.log.Printf("passkey login failed: parse: %v", err)
-		jsonError(w, http.StatusBadRequest, "Не получилось прочитать ответ passkey")
+		jsonError(w, http.StatusBadRequest, "Couldn't read the passkey's answer")
 		return
 	}
 
@@ -173,11 +173,11 @@ func (a *Server) passkeyVerify(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if owner == nil {
 			a.log.Printf("passkey login failed: unknown credential %s", b64.EncodeToString(parsed.RawID)[:min(8, len(b64.EncodeToString(parsed.RawID)))])
-			jsonError(w, http.StatusForbidden, "Этот passkey здесь не знают. Возможно, его удалили")
+			jsonError(w, http.StatusForbidden, "This passkey isn't known here. It may have been removed")
 			return
 		}
 		a.log.Printf("passkey login failed: %s: %v", owner.Key, describe(err))
-		jsonError(w, http.StatusForbidden, "Passkey не подтвердился")
+		jsonError(w, http.StatusForbidden, "The passkey couldn't be verified")
 		return
 	}
 	if cred.Authenticator.CloneWarning {
@@ -190,7 +190,7 @@ func (a *Server) passkeyVerify(w http.ResponseWriter, r *http.Request) {
 	s, person, err := a.addProof(a.session(r), nil, &pkProof{Person: owner.Key, Cred: b64.EncodeToString(cred.ID), At: a.now().Unix()})
 	if err != nil || person == nil {
 		a.log.Printf("passkey login failed: %v", err)
-		jsonError(w, http.StatusInternalServerError, "Не получилось войти")
+		jsonError(w, http.StatusInternalServerError, "Sign-in failed")
 		return
 	}
 	a.log.Printf("passkey login: %s", person.Key)

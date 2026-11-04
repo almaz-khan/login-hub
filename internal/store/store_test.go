@@ -25,7 +25,7 @@ func TestSeedChecks(t *testing.T) {
 		"upper hex secret":  {rcHash, strings.ToUpper(rcHash), `secret_sha256`},
 		"misspelt key":      {`"allow":["group:club"]`, `"allows":["group:club"]`, `unknown field "allows"`},
 		"notify outsider":   {`"notify":"Alice"`, `"notify":"Zed"`, `notify: "Zed"`},
-		"notify no tg":      {`"name":"Кэрол","telegram":"333"`, `"name":"Кэрол"`, ``},
+		"notify no tg":      {`"name":"Carol","telegram":"333"`, `"name":"Carol"`, ``},
 		"bad client id":     {`"running-club":{`, `"Running Club":{`, `bad client id`},
 		"bad person key":    {`"Carol":{`, `"Carol Smith":{`, `bad key "Carol Smith"`},
 		"same telegram":     {`"telegram":"333"`, `"telegram":"222"`, `Bob and Carol have the same Telegram id`},
@@ -49,7 +49,7 @@ func TestSeedChecks(t *testing.T) {
 		}
 	}
 	// a notify person without a Telegram id can't be messaged
-	raw := strings.Replace(strings.Replace(good, `"notify":"Alice"`, `"notify":"Carol"`, 1), `"name":"Кэрол","telegram":"333"`, `"name":"Кэрол"`, 1)
+	raw := strings.Replace(strings.Replace(good, `"notify":"Alice"`, `"notify":"Carol"`, 1), `"name":"Carol","telegram":"333"`, `"name":"Carol"`, 1)
 	if _, err := ParseSeed([]byte(raw)); err == nil || !strings.Contains(err.Error(), "no Telegram id") {
 		t.Errorf("notify without telegram: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestStoreReopenAndVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p, _ := s.PersonByTelegram(alice); p == nil || p.Key != "Alice" || p.Name != "Алиса" {
+	if p, _ := s.PersonByTelegram(alice); p == nil || p.Key != "Alice" || p.Name != "Alice" {
 		t.Fatalf("after reopen: %+v", p)
 	}
 	var v int

@@ -79,7 +79,7 @@ func (a *Server) apiRoutes() http.Handler {
 			return nil, err
 		}
 		if p == nil {
-			return nil, refuse("Нет такого человека")
+			return nil, refuse("No such person")
 		}
 		token, err := a.store.CreateEnrollment(p.Key, admin.Key, enrollTTL)
 		if err != nil {
@@ -91,7 +91,7 @@ func (a *Server) apiRoutes() http.Handler {
 	h("DELETE /admin/api/passkeys/{id}", func(r *http.Request, admin *store.Person) (any, error) {
 		id, err := b64.DecodeString(r.PathValue("id"))
 		if err != nil {
-			return nil, refuse("Нет такого passkey")
+			return nil, refuse("No such passkey")
 		}
 		return nil, a.store.DeletePasskeyChecked(id, admin.Key, a.cfg.Admin)
 	})
@@ -161,7 +161,7 @@ func (a *Server) apiRoutes() http.Handler {
 	})
 
 	mux.HandleFunc("/admin/api/", func(w http.ResponseWriter, r *http.Request) {
-		jsonError(w, http.StatusNotFound, "Нет такого запроса")
+		jsonError(w, http.StatusNotFound, "No such request")
 	})
 	return mux
 }
@@ -173,12 +173,12 @@ func (a *Server) api(fn apiFunc) http.Handler {
 		write := r.Method != http.MethodGet && r.Method != http.MethodHead
 		same := site == "same-origin" || site == "" && (!write || origin == a.issuer)
 		if !same || write && r.ContentLength != 0 && r.Header.Get("Content-Type") != "application/json" {
-			jsonError(w, http.StatusForbidden, "Только со страницы админки")
+			jsonError(w, http.StatusForbidden, "Only from the admin UI")
 			return
 		}
 		admin := a.admin(r)
 		if admin == nil {
-			jsonError(w, http.StatusForbidden, "Только для админа: войди заново")
+			jsonError(w, http.StatusForbidden, "Admin only: sign in again")
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
@@ -189,7 +189,7 @@ func (a *Server) api(fn apiFunc) http.Handler {
 			jsonError(w, http.StatusBadRequest, ue.Msg)
 		case err != nil:
 			a.log.Printf("admin api: %s %s: %v", r.Method, r.URL.Path, err)
-			jsonError(w, http.StatusInternalServerError, "Не получилось: подробности в логе хаба")
+			jsonError(w, http.StatusInternalServerError, "That failed: details are in the hub's log")
 		case out == nil:
 			jsonOut(w, http.StatusOK, map[string]bool{"ok": true})
 		default:
@@ -205,7 +205,7 @@ func readJSON(r *http.Request, v any) error {
 	dec := json.NewDecoder(io.LimitReader(r.Body, 64<<10))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		return refuse("Не получилось прочитать запрос: %v", err)
+		return refuse("Couldn't read the request: %v", err)
 	}
 	return nil
 }

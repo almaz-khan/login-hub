@@ -15,7 +15,7 @@ func TestTelegramOff(t *testing.T) {
 	b := e.browser()
 	// a Telegram-only app: nothing to offer, said plainly
 	resp := b.get(e.rp("running-club").start().url)
-	if page := body(resp); resp.StatusCode != http.StatusServiceUnavailable || !strings.Contains(page, "Telegram пока выключен") {
+	if page := body(resp); resp.StatusCode != http.StatusServiceUnavailable || !strings.Contains(page, "Telegram is off for now") {
 		t.Fatalf("telegram-only app: %d %s", resp.StatusCode, page)
 	}
 	if resp := b.get(e.url + "/login/telegram?next=/"); resp.StatusCode != http.StatusServiceUnavailable {
@@ -50,7 +50,7 @@ func TestTelegramHalfConfigured(t *testing.T) {
 
 func TestSeedWithoutApps(t *testing.T) {
 	var logs bytes.Buffer
-	seed := `{"people":{"Admin":{"name":"Админ"}}}`
+	seed := `{"people":{"Admin":{"name":"Admin"}}}`
 	cfg := Config{SessionSecret: strings.Repeat("s", 32), PublicURL: "https://login.example", SigningKey: keyA, Store: emptyStore(t), Seed: []byte(seed), Admin: "Admin", Log: log.New(&logs, "", 0)}
 	a := New(cfg)
 	if len(a.missing) > 0 {
@@ -109,7 +109,7 @@ func TestAdminNeedsAPasskey(t *testing.T) {
 	b := e.browser()
 	e.rp("running-club").login(b) // Alice, the admin, by Telegram only
 	resp := b.get(e.url + "/admin")
-	if page := body(resp); resp.StatusCode != http.StatusUnauthorized || !strings.Contains(page, "Вход только с passkey") || strings.Contains(page, "/login/telegram") {
+	if page := body(resp); resp.StatusCode != http.StatusUnauthorized || !strings.Contains(page, "Passkey sign-in only") || strings.Contains(page, "/login/telegram") {
 		t.Fatalf("admin by Telegram: %d %s", resp.StatusCode, page)
 	}
 	if status, _ := e.call(b, http.MethodGet, "/admin/api/state", nil); status != http.StatusForbidden {

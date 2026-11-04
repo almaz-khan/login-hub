@@ -1,6 +1,6 @@
 package main
 
-// The hub's binary. `hub` serves (configuration: README «Настройка»); the subcommands are tools
+// The hub's binary. `hub` serves (configuration: README «Configuration»); the subcommands are tools
 // for the Mac (`go run ./cmd/hub <tool>`):
 //
 //	hub keygen                     a new HUB_SIGNING_KEY and its kid

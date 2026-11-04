@@ -34,7 +34,7 @@
 
 	function who(a: App) {
 		return a.allow
-			.map((x) => (x.startsWith('group:') ? `группа ${x.slice(6)}` : (s.people.find((p) => p.key === x)?.name ?? x)))
+			.map((x) => (x.startsWith('group:') ? `group ${x.slice(6)}` : (s.people.find((p) => p.key === x)?.name ?? x)))
 			.join(', ');
 	}
 
@@ -73,45 +73,45 @@
 
 {#if secret}
 	<section class="success" aria-live="polite">
-		<strong>Секрет для {secret.app}: он показывается только сейчас</strong>
-		<span>Положи его в переменные сайта, рядом с остальными:</span>
+		<strong>Secret for {secret.app}: shown only now</strong>
+		<span>Put it in the app's variables, next to the others:</span>
 		<span class="mono">OIDC_ISSUER={issuer}<br />OIDC_CLIENT_ID={secret.app}<br />OIDC_CLIENT_SECRET={secret.value}</span>
 		<div class="row">
-			<Copy text={secret.value} label="Скопировать секрет" />
-			<button class="ghost" onclick={() => (secret = null)}>Я сохранил, скрыть</button>
+			<Copy text={secret.value} label="Copy the secret" />
+			<button class="ghost" onclick={() => (secret = null)}>Saved it, hide</button>
 		</div>
 	</section>
 {/if}
 
 <section class="panel">
-	<h1>Сайты</h1>
+	<h1>Apps</h1>
 	<div class="list">
 		{#each s.apps as a (a.id)}
 			<article class="stack" aria-label={a.name}>
 				{#if editing === a.id}
-					<AppForm bind:draft people={s.people} groups={s.groups} busy={hub.busy} submit="Сохранить" onsubmit={() => save(a.id)}>
+					<AppForm bind:draft people={s.people} groups={s.groups} busy={hub.busy} submit="Save" onsubmit={() => save(a.id)}>
 						<div class="spread">
 							<h2>{a.name} <span class="muted mono small">{a.id}</span></h2>
-							<button type="button" class="ghost" onclick={() => (editing = null)}>Отмена</button>
+							<button type="button" class="ghost" onclick={() => (editing = null)}>Cancel</button>
 						</div>
 					</AppForm>
 				{:else}
 					<div class="spread">
 						<div>
 							<h2>{a.name}</h2>
-							<p class="muted small"><span class="mono">{a.id}</span> · с {date(a.created)}</p>
+							<p class="muted small"><span class="mono">{a.id}</span> · since {date(a.created)}</p>
 						</div>
 						<div class="row">
-							<button class="ghost" onclick={() => edit(a)}>Изменить</button>
-							<Confirm label="Новый секрет" question="Старый секрет сразу перестанет работать. Сделать новый?" onconfirm={() => rotate(a.id)} />
-							<Confirm label="Удалить" question={`Удалить ${a.name}? Вход на него перестанет работать.`} onconfirm={() => change(() => api('DELETE', `/apps/${enc(a.id)}`))} />
+							<button class="ghost" onclick={() => edit(a)}>Edit</button>
+							<Confirm label="New secret" question="The old secret stops working at once. Make a new one?" onconfirm={() => rotate(a.id)} />
+							<Confirm label="Delete" question={`Delete ${a.name}? Signing in to it stops working.`} onconfirm={() => change(() => api('DELETE', `/apps/${enc(a.id)}`))} />
 						</div>
 					</div>
 					<div class="row small">
-						<span class="muted">Вход:</span>
+						<span class="muted">Sign-in:</span>
 						{#each a.login as m (m)}<span class="chip on">{methodName[m]}</span>{/each}
-						<span class="muted">Кто:</span>
-						<span>{who(a) || 'никто'}</span>
+						<span class="muted">Who:</span>
+						<span>{who(a) || 'nobody'}</span>
 					</div>
 					<div class="small mono muted">
 						{#each a.redirect_uris as u (u)}<div>↩ {u}</div>{/each}
@@ -124,12 +124,12 @@
 </section>
 
 <section class="panel">
-	<h2>Новый сайт</h2>
-	<AppForm bind:draft={newDraft} people={s.people} groups={s.groups} busy={hub.busy} submit="Добавить и сделать секрет" onsubmit={create}>
+	<h2>New app</h2>
+	<AppForm bind:draft={newDraft} people={s.people} groups={s.groups} busy={hub.busy} submit="Add and make a secret" onsubmit={create}>
 		<label>
 			Client id
-			<input bind:value={newID} required pattern="[a-z0-9][a-z0-9\-]{'{0,62}'}" placeholder="например, running-club" />
-			<span class="muted">Строчная латиница, цифры и -. Потом не меняется.</span>
+			<input bind:value={newID} required pattern="[a-z0-9][a-z0-9\-]{'{0,62}'}" placeholder="for example, running-club" />
+			<span class="muted">Lowercase Latin letters, digits and -. It can't change later.</span>
 		</label>
 	</AppForm>
 </section>

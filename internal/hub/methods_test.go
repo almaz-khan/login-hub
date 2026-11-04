@@ -28,7 +28,7 @@ func TestChooserForBoth(t *testing.T) {
 	b := e.browser()
 	resp := b.get(e.rp("both").start().url)
 	page := body(resp)
-	if resp.StatusCode != http.StatusOK || !strings.Contains(page, `href="/login/telegram?next=%2Fauthorize%3F`) || !strings.Contains(page, `href="/login/passkey?next=%2Fauthorize%3F`) || !strings.Contains(page, "Вход на «Both»") {
+	if resp.StatusCode != http.StatusOK || !strings.Contains(page, `href="/login/telegram?next=%2Fauthorize%3F`) || !strings.Contains(page, `href="/login/passkey?next=%2Fauthorize%3F`) || !strings.Contains(page, "Sign in to “Both”") {
 		t.Fatalf("chooser: %d %s", resp.StatusCode, page)
 	}
 	// with Telegram proven, an app that accepts both lets them through, amr says how
@@ -50,13 +50,13 @@ func TestStepUp(t *testing.T) {
 	pk := e.rp("pk")
 	// Alice has no passkey yet: she is told to get one, not sent round in circles
 	resp := b.get(pk.start().url)
-	if page := body(resp); resp.StatusCode != http.StatusForbidden || !strings.Contains(page, "Нужен passkey") || !strings.Contains(page, "Passkey Only") {
+	if page := body(resp); resp.StatusCode != http.StatusForbidden || !strings.Contains(page, "Passkey needed") || !strings.Contains(page, "Passkey Only") {
 		t.Fatalf("no passkey: %d %s", resp.StatusCode, page)
 	}
 	e.exec(`INSERT INTO passkeys (id, person, data, label, created_at) VALUES (x'01', 'Alice', CAST('{}' AS BLOB), 'test', 0)`)
 	resp = b.get(pk.start().url)
 	page := body(resp)
-	if resp.StatusCode != http.StatusOK || resp.Header.Get("Location") != "" || !strings.Contains(page, "нужен вход через passkey") || !strings.Contains(page, "<b>Алиса</b>") || strings.Contains(page, "/login/telegram") {
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Location") != "" || !strings.Contains(page, "needs a sign-in with passkey") || !strings.Contains(page, "<b>Alice</b>") || strings.Contains(page, "/login/telegram") {
 		t.Fatalf("step-up: %d %s", resp.StatusCode, page)
 	}
 	// prompt=none: the app hears it needs a login, nothing more
@@ -84,11 +84,11 @@ func TestProofsExpire(t *testing.T) {
 func TestHomeAndLoginPaths(t *testing.T) {
 	e := setup(t)
 	b := e.browser()
-	if page := body(b.get(e.url + "/")); !strings.Contains(page, "Один вход на все сайты") {
+	if page := body(b.get(e.url + "/")); !strings.Contains(page, "One sign-in for every site") {
 		t.Fatal(page)
 	}
 	e.rp("running-club").login(b)
-	if page := body(b.get(e.url + "/")); !strings.Contains(page, "<b>Алиса</b> (@alice), через Telegram") {
+	if page := body(b.get(e.url + "/")); !strings.Contains(page, "<b>Alice</b> (@alice), with Telegram") {
 		t.Fatal(page)
 	}
 	// /login itself is gone: each method has its own path

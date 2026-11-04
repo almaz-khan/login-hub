@@ -48,18 +48,18 @@ func (a *Server) notifyDenied(id identity, c *store.App) {
 	a.notifyMu.Unlock()
 
 	// HTML so the name links to the profile; everything from Telegram is escaped
-	text := "🚫 Нет доступа к «" + html.EscapeString(c.Name) + "»"
+	text := "🚫 No access to “" + html.EscapeString(c.Name) + "”"
 	if tg := id.tg; tg != nil {
-		text += "\n" + fmt.Sprintf(`<a href="tg://user?id=%s">%s</a>`, tg.ID, html.EscapeString(or(tg.Name, "Без имени")))
+		text += "\n" + fmt.Sprintf(`<a href="tg://user?id=%s">%s</a>`, tg.ID, html.EscapeString(or(tg.Name, "No name")))
 		if tg.Username != "" {
 			text += " (@" + html.EscapeString(tg.Username) + ")"
 		}
 		text += "\nTelegram id: " + tg.ID
 	}
 	if id.person != nil {
-		text += "\nВ хабе: " + html.EscapeString(id.person.Key) + ", вход: " + strings.Join(id.methods(), " + ")
+		text += "\nIn the hub: " + html.EscapeString(id.person.Key) + ", signed in with " + strings.Join(id.methods(), " + ")
 	} else {
-		text += "\nВ хабе такого человека нет"
+		text += "\nNot in the hub"
 	}
 
 	a.sendLater(to.TelegramID, text)

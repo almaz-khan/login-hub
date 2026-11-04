@@ -48,11 +48,11 @@ func TestUnknownTelegramAccount(t *testing.T) {
 		t.Fatalf("unknown account: %d", resp.StatusCode)
 	}
 	e.app.Load().wg.Wait()
-	if m := e.bot.messages(); len(m) != 1 || !strings.Contains(m[0]["text"].(string), "такого человека нет") {
+	if m := e.bot.messages(); len(m) != 1 || !strings.Contains(m[0]["text"].(string), "Not in the hub") {
 		t.Fatalf("bot: %v", m)
 	}
 	// once the admin adds them, the same hub session works
-	e.exec(`INSERT INTO people (key, name, telegram_id, created_at) VALUES ('Dave', 'Дэйв', ?, 0)`, dave)
+	e.exec(`INSERT INTO people (key, name, telegram_id, created_at) VALUES ('Dave', 'Dave', ?, 0)`, dave)
 	e.exec(`INSERT INTO app_access (app, person) VALUES ('running-club', 'Dave')`)
 	if idt := e.rp("running-club").login(b); idt.Subject != "Dave" {
 		t.Fatal(idt.Subject)

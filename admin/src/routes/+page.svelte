@@ -44,14 +44,14 @@
 
 <section class="panel">
 	<div class="spread">
-		<h1>Люди</h1>
+		<h1>People</h1>
 		<label class="row small">
-			Бот пишет об отказах
+			The bot reports refusals to
 			<select
 				value={s.notify}
 				onchange={(e) => change(() => api('PUT', '/settings', { notify: e.currentTarget.value }))}
 			>
-				<option value="">никому</option>
+				<option value="">nobody</option>
 				{#each s.people.filter((p) => p.telegram_id) as p (p.key)}
 					<option value={p.key}>{p.name}</option>
 				{/each}
@@ -64,11 +64,11 @@
 			<article class="stack" aria-label={p.name}>
 				{#if editing === p.key}
 					<form class="grid2" onsubmit={(e) => save(e, p.key)}>
-						<label>Имя<input bind:value={draft.name} required /></label>
-						<label>Telegram id<input bind:value={draft.telegram_id} inputmode="numeric" placeholder="нет" /></label>
+						<label>Name<input bind:value={draft.name} required /></label>
+						<label>Telegram id<input bind:value={draft.telegram_id} inputmode="numeric" placeholder="none" /></label>
 						<div class="row">
-							<button disabled={hub.busy}>Сохранить</button>
-							<button type="button" class="ghost" onclick={() => ((editing = null), (hub.error = ''))}>Отмена</button>
+							<button disabled={hub.busy}>Save</button>
+							<button type="button" class="ghost" onclick={() => ((editing = null), (hub.error = ''))}>Cancel</button>
 						</div>
 					</form>
 				{:else}
@@ -76,40 +76,40 @@
 						<div>
 							<h2>{p.name}</h2>
 							<p class="muted small">
-								<span class="mono">{p.key}</span> · Telegram {p.telegram_id || '—'} · был {date(p.last_seen)}
+								<span class="mono">{p.key}</span> · Telegram {p.telegram_id || '—'} · last seen {date(p.last_seen)}
 							</p>
 						</div>
 						<div class="row">
-							<button class="ghost" onclick={() => edit(p)}>Изменить</button>
+							<button class="ghost" onclick={() => edit(p)}>Edit</button>
 							{#if p.key !== s.me}
-								<Confirm label="Удалить" question={`Удалить ${p.name}? Пропадут и доступы, и passkeys.`} onconfirm={() => change(() => api('DELETE', `/people/${enc(p.key)}`))} />
+								<Confirm label="Delete" question={`Delete ${p.name}? Their access and passkeys go too.`} onconfirm={() => change(() => api('DELETE', `/people/${enc(p.key)}`))} />
 							{/if}
 						</div>
 					</div>
 				{/if}
 
 				<div class="row small">
-					<span class="muted">Группы:</span>
+					<span class="muted">Groups:</span>
 					{#each p.groups as g (g)}<span class="chip">{g}</span>{:else}<span class="muted">—</span>{/each}
-					<span class="muted">Сайты:</span>
+					<span class="muted">Apps:</span>
 					{#each p.apps as a (a)}<span class="chip on">{appName(a)}</span>{:else}<span class="muted">—</span>{/each}
 				</div>
 
 				<div class="stack small">
 					{#each p.passkeys as k (k.id)}
 						<div class="spread">
-							<span>🔑 {k.label} <span class="muted">· с {date(k.created)} · вход {date(k.last_used)}</span></span>
-							<Confirm label="Удалить passkey" question={`Удалить passkey «${k.label}»?`} onconfirm={() => change(() => api('DELETE', `/passkeys/${enc(k.id)}`))} />
+							<span>🔑 {k.label} <span class="muted">· since {date(k.created)} · last used {date(k.last_used)}</span></span>
+							<Confirm label="Delete passkey" question={`Delete the passkey “${k.label}”?`} onconfirm={() => change(() => api('DELETE', `/passkeys/${enc(k.id)}`))} />
 						</div>
 					{/each}
 					{#if links[p.key]}
 						<div class="success">
-							<span>Ссылка для {p.name}: работает один раз, 24 часа.</span>
+							<span>Link for {p.name}: works once, for 24 hours.</span>
 							<span class="mono">{links[p.key].link}</span>
 							<Copy text={links[p.key].link} />
 						</div>
 					{:else}
-						<div><button class="link" onclick={() => makeLink(p.key)} disabled={hub.busy}>Ссылка для passkey</button></div>
+						<div><button class="link" onclick={() => makeLink(p.key)} disabled={hub.busy}>Passkey link</button></div>
 					{/if}
 				</div>
 			</article>
@@ -118,19 +118,19 @@
 </section>
 
 <section class="panel">
-	<h2>Новый человек</h2>
+	<h2>New person</h2>
 	<form class="grid2" onsubmit={add}>
 		<label>
-			Ключ
-			<input bind:value={adding.key} required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{'{0,63}'}" placeholder="Например, Anna" />
-			<span class="muted">Его видят сайты как sub. Потом не меняется.</span>
+			Key
+			<input bind:value={adding.key} required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{'{0,63}'}" placeholder="For example, Anna" />
+			<span class="muted">Apps see it as sub. It can't change later.</span>
 		</label>
-		<label>Имя<input bind:value={adding.name} required /></label>
+		<label>Name<input bind:value={adding.name} required /></label>
 		<label>
 			Telegram id
-			<input bind:value={adding.telegram_id} inputmode="numeric" placeholder="необязательно" />
-			<span class="muted">Число из сообщения бота «Нет доступа».</span>
+			<input bind:value={adding.telegram_id} inputmode="numeric" placeholder="optional" />
+			<span class="muted">The number in the bot's “No access” message.</span>
 		</label>
-		<div class="row"><button disabled={hub.busy}>Добавить</button></div>
+		<div class="row"><button disabled={hub.busy}>Add</button></div>
 	</form>
 </section>

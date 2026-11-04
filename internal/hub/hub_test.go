@@ -89,9 +89,9 @@ func seedJSON(allowRC ...string) string {
 	b, _ := json.Marshal(map[string]any{
 		"notify": "Alice",
 		"people": map[string]any{
-			"Alice": map[string]string{"name": "Алиса", "telegram": alice},
-			"Bob":   map[string]string{"name": "Боб", "telegram": bob},
-			"Carol": map[string]string{"name": "Кэрол", "telegram": carol},
+			"Alice": map[string]string{"name": "Alice", "telegram": alice},
+			"Bob":   map[string]string{"name": "Bob", "telegram": bob},
+			"Carol": map[string]string{"name": "Carol", "telegram": carol},
 		},
 		"groups": map[string][]string{"club": {"Alice"}},
 		"apps":   apps,
@@ -485,7 +485,7 @@ func TestFlow(t *testing.T) {
 		TelegramID string `json:"telegram_id"`
 	}
 	_ = idt.Claims(&c)
-	if idt.Subject != "Alice" || idt.Audience[0] != "running-club" || c.Name != "Алиса" || c.Username != "alice" || c.AuthTime == 0 || c.TelegramID != alice {
+	if idt.Subject != "Alice" || idt.Audience[0] != "running-club" || c.Name != "Alice" || c.Username != "alice" || c.AuthTime == 0 || c.TelegramID != alice {
 		t.Fatalf("token: sub %q aud %v claims %+v", idt.Subject, idt.Audience, c)
 	}
 	if left := time.Until(idt.Expiry); left > 5*time.Minute || left < 4*time.Minute {
@@ -528,7 +528,7 @@ func TestBadClientOrRedirectNeverRedirects(t *testing.T) {
 		mod(q)
 		u.RawQuery = q.Encode()
 		resp := b.get(u.String())
-		if resp.StatusCode != http.StatusBadRequest || resp.Header.Get("Location") != "" || !strings.Contains(body(resp), "Неверная ссылка") {
+		if resp.StatusCode != http.StatusBadRequest || resp.Header.Get("Location") != "" || !strings.Contains(body(resp), "Wrong sign-in link") {
 			t.Errorf("%s: %d %q", name, resp.StatusCode, resp.Header.Get("Location"))
 		}
 	}
@@ -807,7 +807,7 @@ func TestTelegramFailures(t *testing.T) {
 	e.tg.badNonce = true
 	a := rc.start()
 	resp := b.get(a.url)
-	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(body(resp), "Не получилось войти") {
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(body(resp), "Sign-in failed") {
 		t.Fatalf("bad nonce: %d", resp.StatusCode)
 	}
 	if !strings.Contains(e.logs.String(), "nonce mismatch") {
@@ -837,7 +837,7 @@ func TestLogout(t *testing.T) {
 
 	resp := b.get(logout)
 	page := body(resp)
-	if resp.StatusCode != http.StatusOK || !strings.Contains(page, "Выйти на всех сайтах?") || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "form-action 'self' "+appURL("running-club")+";") {
+	if resp.StatusCode != http.StatusOK || !strings.Contains(page, "Sign out everywhere?") || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "form-action 'self' "+appURL("running-club")+";") {
 		t.Fatalf("logout page: %d %s %s", resp.StatusCode, resp.Header.Get("Content-Security-Policy"), page)
 	}
 	form := url.Values{"client_id": {"running-club"}, "post_logout_redirect_uri": {appURL("running-club") + "/"}, "state": {"s1"}}
@@ -857,7 +857,7 @@ func TestLogout(t *testing.T) {
 	}
 	// an unlisted return address is dropped, not followed
 	resp = b.post(e.url+"/logout", url.Values{"client_id": {"running-club"}, "post_logout_redirect_uri": {"https://evil.example/"}}, "Origin", e.url)
-	if resp.StatusCode != http.StatusOK || resp.Header.Get("Location") != "" || !strings.Contains(body(resp), "Ты вышел") {
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Location") != "" || !strings.Contains(body(resp), "You're signed out") {
 		t.Fatalf("unlisted return: %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	// without a session, GET goes straight back

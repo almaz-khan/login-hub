@@ -58,9 +58,9 @@ func seedJSON(allowRC ...string) string {
 	b, _ := json.Marshal(map[string]any{
 		"notify": "Alice",
 		"people": map[string]any{
-			"Alice": map[string]string{"name": "Алиса", "telegram": alice},
-			"Bob":   map[string]string{"name": "Боб", "telegram": bob},
-			"Carol": map[string]string{"name": "Кэрол", "telegram": carol},
+			"Alice": map[string]string{"name": "Alice", "telegram": alice},
+			"Bob":   map[string]string{"name": "Bob", "telegram": bob},
+			"Carol": map[string]string{"name": "Carol", "telegram": carol},
 		},
 		"groups": map[string][]string{"club": {"Alice"}},
 		"apps":   apps,

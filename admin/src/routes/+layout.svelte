@@ -9,10 +9,10 @@
 	let { children } = $props();
 
 	const tabs = [
-		{ href: resolve('/'), label: 'Люди' },
-		{ href: resolve('/groups'), label: 'Группы' },
-		{ href: resolve('/apps'), label: 'Сайты' },
-		{ href: resolve('/audit'), label: 'Журнал' }
+		{ href: resolve('/'), label: 'People' },
+		{ href: resolve('/groups'), label: 'Groups' },
+		{ href: resolve('/apps'), label: 'Apps' },
+		{ href: resolve('/audit'), label: 'Audit log' }
 	];
 
 	onMount(reload);
@@ -23,15 +23,15 @@
 <header>
 	<div class="spread">
 		<div class="row">
-			<strong>Админка</strong>
-			{#if hub.state}<span class="muted small">вошёл как {hub.state.me}</span>{/if}
+			<strong>Admin</strong>
+			{#if hub.state}<span class="muted small">signed in as {hub.state.me}</span>{/if}
 		</div>
 		<div class="row small">
-			<a href="/admin/backup" download>Скачать копию базы</a>
-			<a href="/">Хаб</a>
+			<a href="/admin/backup" download>Download a database backup</a>
+			<a href="/">Hub</a>
 		</div>
 	</div>
-	<nav class="row" aria-label="Разделы">
+	<nav class="row" aria-label="Sections">
 		{#each tabs as tab (tab.href)}
 			<a href={tab.href} aria-current={page.url.pathname === tab.href ? 'page' : undefined}>{tab.label}</a>
 		{/each}
@@ -42,13 +42,13 @@
 	{#if hub.error}
 		<div class="banner spread" role="alert">
 			<span>{hub.error}</span>
-			<button class="link" onclick={() => (hub.error = '')}>Закрыть</button>
+			<button class="link" onclick={() => (hub.error = '')}>Close</button>
 		</div>
 	{/if}
 	{#if hub.state}
 		{@render children()}
 	{:else if !hub.error}
-		<p class="muted">Загружаю…</p>
+		<p class="muted">Loading…</p>
 	{/if}
 </main>
 

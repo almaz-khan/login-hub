@@ -12,9 +12,9 @@
 			onclick={async () => {
 				await onconfirm();
 				asking = false;
-			}}>Да, удалить</button
+			}}>Yes, go ahead</button
 		>
-		<button class="ghost" onclick={() => (asking = false)}>Нет</button>
+		<button class="ghost" onclick={() => (asking = false)}>No</button>
 	</span>
 {:else}
 	<button class="danger" onclick={() => (asking = true)}>{label}</button>

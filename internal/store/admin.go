@@ -156,10 +156,10 @@ func (s *Store) State() (*State, error) {
 
 func checkPerson(name, telegram string) error {
 	if strings.TrimSpace(name) == "" {
-		return refuse("Нужно имя")
+		return refuse("A name is needed")
 	}
 	if telegram != "" && !digits.MatchString(telegram) {
-		return refuse("Telegram id — это число (его показывает бот при отказе во входе)")
+		return refuse("A Telegram id is a number (the bot shows it when it refuses a sign-in)")
 	}
 	return nil
 }
@@ -169,20 +169,20 @@ func dbRefusal(err error) error {
 	case err == nil:
 		return nil
 	case strings.Contains(err.Error(), "people.telegram_id"):
-		return refuse("Этот Telegram id уже у другого человека")
+		return refuse("Someone else already has this Telegram id")
 	case strings.Contains(err.Error(), "UNIQUE constraint failed: people.key"),
 		strings.Contains(err.Error(), "UNIQUE constraint failed: groups.name"),
 		strings.Contains(err.Error(), "UNIQUE constraint failed: apps.id"):
-		return refuse("Такой уже есть")
+		return refuse("That already exists")
 	case strings.Contains(err.Error(), "FOREIGN KEY constraint failed"):
-		return refuse("Нет такого человека или группы")
+		return refuse("No such person or group")
 	}
 	return err
 }
 
 func (s *Store) CreatePerson(key, name, telegram, actor string) error {
 	if !personKey.MatchString(key) {
-		return refuse("Ключ: латиница, цифры, _ и -, до 64 символов. Его видят сайты, менять его потом нельзя")
+		return refuse("Key: Latin letters, digits, _ and -, up to 64 characters. Sites see it, and it can't change later")
 	}
 	if err := checkPerson(name, telegram); err != nil {
 		return err
@@ -208,7 +208,7 @@ func (s *Store) UpdatePerson(key, name, telegram, actor, admin string) error {
 				return err
 			}
 			if !pk {
-				return refuse("Без Telegram id и без passkey админ не сможет войти")
+				return refuse("Without a Telegram id or a passkey, the admin couldn't sign in")
 			}
 		}
 		res, err := tx.Exec(`UPDATE people SET name = ?, telegram_id = ? WHERE key = ?`, strings.TrimSpace(name), nullable(telegram), key)
@@ -216,7 +216,7 @@ func (s *Store) UpdatePerson(key, name, telegram, actor, admin string) error {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			return refuse("Нет такого человека")
+			return refuse("No such person")
 		}
 		return s.audit(tx, actor, "person edit", fmt.Sprintf("%s: %s, telegram %s", key, strings.TrimSpace(name), or(telegram, "—")))
 	}))
@@ -224,7 +224,7 @@ func (s *Store) UpdatePerson(key, name, telegram, actor, admin string) error {
 
 func (s *Store) DeletePerson(key, actor, admin string) error {
 	if key == admin {
-		return refuse("Админа удалить нельзя")
+		return refuse("The admin can't be deleted")
 	}
 	return s.tx(func(tx *sql.Tx) error {
 		res, err := tx.Exec(`DELETE FROM people WHERE key = ?`, key)
@@ -232,7 +232,7 @@ func (s *Store) DeletePerson(key, actor, admin string) error {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			return refuse("Нет такого человека")
+			return refuse("No such person")
 		}
 		if _, err := tx.Exec(`DELETE FROM settings WHERE key = 'notify' AND value = ?`, key); err != nil {
 			return err
@@ -247,7 +247,7 @@ func (s *Store) DeletePasskeyChecked(id []byte, actor, admin string) error {
 	var person string
 	err := s.db.QueryRow(`SELECT person FROM passkeys WHERE id = ?`, id).Scan(&person)
 	if errors.Is(err, sql.ErrNoRows) {
-		return refuse("Нет такого passkey")
+		return refuse("No such passkey")
 	}
 	if err != nil {
 		return err
@@ -258,7 +258,7 @@ func (s *Store) DeletePasskeyChecked(id []byte, actor, admin string) error {
 			return err
 		}
 		if n == 1 {
-			return refuse("Это последний passkey админа, а админка открывается только с passkey: сначала добавь другой")
+			return refuse("This is the admin's last passkey, and only a passkey opens the admin UI: add another one first")
 		}
 	}
 	_, err = s.DeletePasskey(id, actor)
@@ -269,7 +269,7 @@ func (s *Store) DeletePasskeyChecked(id []byte, actor, admin string) error {
 
 func (s *Store) CreateGroup(name, actor string) error {
 	if !groupNameRe.MatchString(name) {
-		return refuse("Имя группы: строчная латиница, цифры и -")
+		return refuse("Group name: lowercase Latin letters, digits and -")
 	}
 	return dbRefusal(s.tx(func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`INSERT INTO groups (name) VALUES (?)`, name); err != nil {
@@ -286,7 +286,7 @@ func (s *Store) DeleteGroup(name, actor string) error {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			return refuse("Нет такой группы")
+			return refuse("No such group")
 		}
 		return s.audit(tx, actor, "group delete", name)
 	})
@@ -300,7 +300,7 @@ func (s *Store) SetGroupMembers(name string, members []string, actor string) err
 			return err
 		}
 		if !exists {
-			return refuse("Нет такой группы")
+			return refuse("No such group")
 		}
 		if _, err := tx.Exec(`DELETE FROM group_members WHERE group_name = ?`, name); err != nil {
 			return err
@@ -336,7 +336,7 @@ func (in *AppInput) clean() {
 // checkInput: the seed's rules; secret "-" stands for one that's already valid
 func checkInput(id string, in *AppInput) error {
 	if len(in.Login) == 0 {
-		return refuse("Нужен хотя бы один способ входа")
+		return refuse("At least one sign-in method is needed")
 	}
 	if errs := checkApp(id, in.Name, in.Redirects, in.Logouts, in.Login, strings.Repeat("0", 64)); len(errs) > 0 {
 		return refuse("%s", strings.Join(errs, "; "))
@@ -370,7 +370,7 @@ func (s *Store) writeApp(tx *sql.Tx, id string, in *AppInput) error {
 			_, err = tx.Exec(`INSERT INTO app_access (app, person) VALUES (?, ?)`, id, who)
 		}
 		if err != nil {
-			return refuse("Нет такого человека или группы: %s", who)
+			return refuse("No such person or group: %s", who)
 		}
 	}
 	return nil
@@ -403,7 +403,7 @@ func (s *Store) UpdateApp(id string, in AppInput, actor string) error {
 			return err
 		}
 		if !exists {
-			return refuse("Нет такого сайта")
+			return refuse("No such app")
 		}
 		if err := s.writeApp(tx, id, &in); err != nil {
 			return err
@@ -420,7 +420,7 @@ func (s *Store) SetAppSecret(id string, secretHash []byte, actor string) error {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			return refuse("Нет такого сайта")
+			return refuse("No such app")
 		}
 		return s.audit(tx, actor, "app secret", id)
 	})
@@ -433,7 +433,7 @@ func (s *Store) DeleteApp(id, actor string) error {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			return refuse("Нет такого сайта")
+			return refuse("No such app")
 		}
 		return s.audit(tx, actor, "app delete", id)
 	})
@@ -452,13 +452,13 @@ func (s *Store) SetNotify(person, actor string) error {
 		var tg sql.NullString
 		err := tx.QueryRow(`SELECT telegram_id FROM people WHERE key = ?`, person).Scan(&tg)
 		if errors.Is(err, sql.ErrNoRows) {
-			return refuse("Нет такого человека")
+			return refuse("No such person")
 		}
 		if err != nil {
 			return err
 		}
 		if !tg.Valid {
-			return refuse("Боту некому писать: у этого человека нет Telegram id")
+			return refuse("The bot can't message them: this person has no Telegram id")
 		}
 		if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('notify', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, person); err != nil {
 			return err
