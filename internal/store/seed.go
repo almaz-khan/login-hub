@@ -1,4 +1,4 @@
-package main
+package store
 
 // The seed: people, groups and apps as JSON, imported once into an empty database (HUB_SEED on
 // Railway, `hub import` locally). The real one lives in private/ (gitignored), never in git.
@@ -24,7 +24,7 @@ import (
 	"strings"
 )
 
-type seedFile struct {
+type Seed struct {
 	Notify string                `json:"notify"`
 	People map[string]seedPerson `json:"people"`
 	Groups map[string][]string   `json:"groups"`
@@ -54,10 +54,10 @@ var (
 	methods     = map[string]bool{"telegram": true, "passkey": true}
 )
 
-func parseSeed(raw []byte) (*seedFile, error) {
+func ParseSeed(raw []byte) (*Seed, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields() // a misspelt key ("allows") would otherwise silently mean nobody
-	var f seedFile
+	var f Seed
 	if err := dec.Decode(&f); err != nil {
 		return nil, err
 	}
@@ -141,12 +141,12 @@ func checkApp(id, name string, redirects, logouts, login []string, secret string
 		errs = append(errs, "no redirect_uris")
 	}
 	for _, u := range redirects {
-		if err := checkAppURL(u); err != nil {
+		if err := CheckAppURL(u); err != nil {
 			errs = append(errs, fmt.Sprintf("redirect_uris: %q %v", u, err))
 		}
 	}
 	for _, u := range logouts {
-		if err := checkAppURL(u); err != nil {
+		if err := CheckAppURL(u); err != nil {
 			errs = append(errs, fmt.Sprintf("post_logout_redirect_uris: %q %v", u, err))
 		}
 	}
@@ -156,7 +156,7 @@ func checkApp(id, name string, redirects, logouts, login []string, secret string
 		}
 	}
 	if !sha256Hex.MatchString(secret) {
-		errs = append(errs, "secret_sha256 must be 64 lowercase hex characters (go run . secret)")
+		errs = append(errs, "secret_sha256 must be 64 lowercase hex characters (go run ./cmd/hub secret)")
 	}
 	return errs
 }
@@ -166,8 +166,8 @@ func decodeHex(s string) []byte {
 	return b
 }
 
-// checkAppURL: an absolute https URL with no fragment; http only for localhost (local runs and tests)
-func checkAppURL(s string) error {
+// CheckAppURL: an absolute https URL with no fragment; http only for localhost (local runs and tests)
+func CheckAppURL(s string) error {
 	u, err := url.Parse(s)
 	switch {
 	case err != nil:

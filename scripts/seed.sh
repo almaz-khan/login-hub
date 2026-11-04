@@ -14,7 +14,7 @@ if [ "${1:-}" = --delete ]; then
 	railway variable delete HUB_SEED --project "$project" --service "$service" --skip-deploys
 	exit
 fi
-go run . check "$file"
+go run ./cmd/hub check "$file"
 # compact JSON through stdin: the people never appear in a command line or the shell history
 node -e 'process.stdout.write(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))))' "$file" |
 	railway variable set HUB_SEED --stdin --project "$project" --service "$service" --skip-deploys >/dev/null

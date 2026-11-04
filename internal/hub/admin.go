@@ -1,4 +1,4 @@
-package main
+package hub
 
 // Admin endpoints. For now only the backup; the admin UI and its API come in the last phase.
 // An admin is the person whose key is HUB_ADMIN, logged in to the hub; scripts/backup.sh uses
@@ -11,10 +11,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"hub/internal/store"
 )
 
 // admin: the logged-in person if they are the admin, else nil
-func (a *app) admin(r *http.Request) *Person {
+func (a *Server) admin(r *http.Request) *store.Person {
 	if a.cfg.Admin == "" {
 		return nil
 	}
@@ -25,13 +27,13 @@ func (a *app) admin(r *http.Request) *Person {
 	return id.person
 }
 
-func (a *app) backupToken(r *http.Request) bool {
+func (a *Server) backupToken(r *http.Request) bool {
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	return ok && len(a.cfg.BackupToken) >= 32 && subtle.ConstantTimeCompare([]byte(token), []byte(a.cfg.BackupToken)) == 1
 }
 
 // backup: a consistent snapshot of the database (VACUUM INTO), streamed and then deleted
-func (a *app) backup(w http.ResponseWriter, r *http.Request) {
+func (a *Server) backup(w http.ResponseWriter, r *http.Request) {
 	who := "backup token"
 	if !a.backupToken(r) {
 		// a download started by another site's link or form is refused, even for the admin
@@ -47,7 +49,7 @@ func (a *app) backup(w http.ResponseWriter, r *http.Request) {
 		}
 		who = p.Key
 	}
-	tmp := filepath.Join(filepath.Dir(a.store.path), ".backup-"+random()[:16]+".db")
+	tmp := filepath.Join(filepath.Dir(a.store.Path()), ".backup-"+random()[:16]+".db")
 	defer func() { _ = os.Remove(tmp) }()
 	if err := a.store.Backup(tmp); err != nil {
 		a.broken(w, err)

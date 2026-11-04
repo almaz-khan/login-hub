@@ -1,4 +1,4 @@
-package main
+package hub
 
 // Logout everywhere. An app clears its own cookie and sends people to GET /logout?client_id=…
 // &post_logout_redirect_uri=…; the hub asks «Выйти на всех сайтах?», and the button posts back.
@@ -7,21 +7,23 @@ package main
 import (
 	"net/http"
 	"net/url"
+
+	"hub/internal/store"
 )
 
 type logoutTarget struct {
-	app   *client // nil if the request named no known app
-	back  string  // "" unless listed for app
+	app   *store.App // nil if the request named no known app
+	back  string     // "" unless listed for app
 	state string
 }
 
-func (a *app) logoutTarget(v url.Values) logoutTarget {
+func (a *Server) logoutTarget(v url.Values) logoutTarget {
 	c, err := a.store.App(v.Get("client_id"))
 	if err != nil {
 		a.log.Printf("logout: database: %v", err)
 	}
 	t := logoutTarget{app: c}
-	if t.app != nil && t.app.logouts[v.Get("post_logout_redirect_uri")] {
+	if t.app != nil && t.app.Logouts[v.Get("post_logout_redirect_uri")] {
 		t.back, t.state = v.Get("post_logout_redirect_uri"), v.Get("state")
 	} else if v.Get("post_logout_redirect_uri") != "" {
 		a.log.Printf("logout: return address %q is not listed for %q", v.Get("post_logout_redirect_uri"), v.Get("client_id"))
@@ -40,7 +42,7 @@ func (t logoutTarget) url() string {
 	return u.String()
 }
 
-func (a *app) logoutPage(w http.ResponseWriter, r *http.Request) {
+func (a *Server) logoutPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Vary", "Cookie")
 	t := a.logoutTarget(r.URL.Query())
 	id, err := a.resolve(a.session(r))
@@ -61,7 +63,7 @@ func (a *app) logoutPage(w http.ResponseWriter, r *http.Request) {
 
 // logout: a POST from the hub's own page only (not merely the same site: every app on
 // *.almaz.dev is «same-site»), so a link or form elsewhere can't log anyone out
-func (a *app) logout(w http.ResponseWriter, r *http.Request) {
+func (a *Server) logout(w http.ResponseWriter, r *http.Request) {
 	origin, site := r.Header.Get("Origin"), r.Header.Get("Sec-Fetch-Site")
 	// Sec-Fetch-Site is set by the browser and can't be faked by a page; browsers without it send Origin
 	same := site == "same-origin" || site == "" && origin == a.issuer

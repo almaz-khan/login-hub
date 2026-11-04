@@ -1,4 +1,4 @@
-package main
+package hub
 
 import (
 	"encoding/json"
@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"hub/internal/store"
 )
 
 // call: the admin UI's fetch: same-origin, JSON; the status and the decoded answer
@@ -47,7 +49,7 @@ func (e *env) mustCall(b *browser, method, path string, in any) map[string]any {
 	return out
 }
 
-func (e *env) state(b *browser) stateJSON {
+func (e *env) state(b *browser) store.State {
 	e.t.Helper()
 	req, _ := http.NewRequest(http.MethodGet, e.url+"/admin/api/state", nil)
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -56,7 +58,7 @@ func (e *env) state(b *browser) stateJSON {
 		e.t.Fatal(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	var st stateJSON
+	var st store.State
 	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil || resp.StatusCode != http.StatusOK {
 		e.t.Fatalf("state: %d %v", resp.StatusCode, err)
 	}
@@ -140,7 +142,7 @@ func TestAdminPeopleAndGroups(t *testing.T) {
 		t.Fatal(idt.Subject)
 	}
 	st := e.state(admin)
-	var dv personJSON
+	var dv store.StatePerson
 	for _, p := range st.People {
 		if p.Key == "Dave" {
 			dv = p
@@ -240,7 +242,7 @@ func TestAdminApps(t *testing.T) {
 	}
 	// the database never stores the secret itself
 	var n int
-	_ = e.cfg.Store.db.QueryRow(`SELECT count(*) FROM audit WHERE detail LIKE ?`, "%"+secret[:16]+"%").Scan(&n)
+	_ = e.cfg.Store.DB().QueryRow(`SELECT count(*) FROM audit WHERE detail LIKE ?`, "%"+secret[:16]+"%").Scan(&n)
 	if n != 0 {
 		t.Fatal("secret in the audit log")
 	}
@@ -272,7 +274,7 @@ func TestAdminPasskeys(t *testing.T) {
 	nextOf(t, e.passkey(admin, e.enroll("Alice"), "/"))
 	e.exec(`UPDATE people SET telegram_id = NULL WHERE key = 'Alice'`)
 	var aliceKey []byte
-	_ = e.cfg.Store.db.QueryRow(`SELECT id FROM passkeys WHERE person = 'Alice'`).Scan(&aliceKey)
+	_ = e.cfg.Store.DB().QueryRow(`SELECT id FROM passkeys WHERE person = 'Alice'`).Scan(&aliceKey)
 	if status, _ := e.call(admin, http.MethodDelete, "/admin/api/passkeys/"+b64.EncodeToString(aliceKey), nil); status != http.StatusBadRequest {
 		t.Fatalf("admin's last passkey: %d", status)
 	}

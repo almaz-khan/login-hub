@@ -1,7 +1,7 @@
 package main
 
-// Entry point. `hub` serves (configuration: README «Настройка»); the subcommands are tools for
-// the Mac:
+// The hub's binary. `hub` serves (configuration: README «Настройка»); the subcommands are tools
+// for the Mac (`go run ./cmd/hub <tool>`):
 //
 //	hub keygen                     a new HUB_SIGNING_KEY and its kid
 //	hub secret                     a new client secret and the secret_sha256 for the app
@@ -12,7 +12,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -25,22 +24,30 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"hub/internal/hub"
+	"hub/internal/store"
 )
 
 func main() {
 	if len(os.Args) > 1 {
 		os.Exit(tool(os.Args[1:]))
 	}
-	env := func(k, fallback string) string { return or(os.Getenv(k), fallback) }
+	env := func(k, fallback string) string {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+		return fallback
+	}
 	dbFile := filepath.Join(env("DATA_DIR", "/data"), "hub.db")
-	store, err := openStore(dbFile, nil)
+	db, err := store.Open(dbFile, nil)
 	if err != nil {
 		err = fmt.Errorf("%s: %w", dbFile, err)
 	} else {
-		defer func() { _ = store.Close() }()
+		defer func() { _ = db.Close() }()
 	}
-	handler := newApp(Config{
-		Store:         store,
+	handler := hub.New(hub.Config{
+		Store:         db,
 		StoreErr:      err,
 		Seed:          []byte(os.Getenv("HUB_SEED")),
 		Admin:         os.Getenv("HUB_ADMIN"),
@@ -69,7 +76,7 @@ func main() {
 		if err := srv.Shutdown(ctx); err != nil {
 			log.Printf("shutdown: %v", err)
 		}
-		handler.waitNotify(ctx)
+		handler.WaitNotify(ctx)
 	}()
 	log.Printf("listening on %s", srv.Addr)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
@@ -84,14 +91,11 @@ func tool(args []string) int {
 		seed := make([]byte, ed25519.SeedSize)
 		_, _ = rand.Read(seed)
 		pub := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
-		fmt.Printf("HUB_SIGNING_KEY=%s\nkid: %s\n", base64.StdEncoding.EncodeToString(seed), kidOf(pub))
+		fmt.Printf("HUB_SIGNING_KEY=%s\nkid: %s\n", base64.StdEncoding.EncodeToString(seed), hub.KeyID(pub))
 		return 0
 	case "secret":
-		b := make([]byte, 32)
-		_, _ = rand.Read(b)
-		secret := hex.EncodeToString(b) // hex: nothing to escape in Basic auth or a shell
-		sum := sha256.Sum256([]byte(secret))
-		fmt.Printf("OIDC_CLIENT_SECRET=%s   (the app's Railway variable only)\nsecret_sha256: %s   (access.json)\n", secret, hex.EncodeToString(sum[:]))
+		secret, sum := store.NewClientSecret()
+		fmt.Printf("OIDC_CLIENT_SECRET=%s   (the app's Railway variable only)\nsecret_sha256: %s   (the seed, or the admin UI makes one itself)\n", secret, hex.EncodeToString(sum))
 		return 0
 	case "check":
 		file := "private/seed.json"
@@ -117,7 +121,7 @@ func tool(args []string) int {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", fs.Arg(0), err)
 			return 1
 		}
-		s, err := openStore(*db, nil)
+		s, err := store.Open(*db, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", *db, err)
 			return 1
@@ -134,10 +138,10 @@ func tool(args []string) int {
 	return 2
 }
 
-func readSeed(file string) (*seedFile, error) {
+func readSeed(file string) (*store.Seed, error) {
 	raw, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}
-	return parseSeed(raw)
+	return store.ParseSeed(raw)
 }

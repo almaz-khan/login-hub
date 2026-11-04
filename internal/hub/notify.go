@@ -1,4 +1,4 @@
-package main
+package hub
 
 // A Telegram message to the owner (access.json «notify») when someone tries to open an app they
 // aren't allowed in, from the bot that runs the login (TG_BOT_TOKEN; the owner has to press Start
@@ -17,12 +17,14 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"hub/internal/store"
 )
 
 const notifyEvery = time.Hour
 
 // notifyDenied: id.person is nil for a Telegram account the hub doesn't know
-func (a *app) notifyDenied(id identity, c *client) {
+func (a *Server) notifyDenied(id identity, c *store.App) {
 	if a.cfg.BotToken == "" {
 		return
 	}
@@ -65,7 +67,7 @@ func (a *app) notifyDenied(id identity, c *client) {
 
 // tell: a message to the notify person, if there is one with a Telegram id and a bot token.
 // text is HTML: escape anything that comes from outside.
-func (a *app) tell(text string) {
+func (a *Server) tell(text string) {
 	if a.cfg.BotToken == "" {
 		return
 	}
@@ -76,7 +78,7 @@ func (a *app) tell(text string) {
 	a.sendLater(to.TelegramID, html.EscapeString(text))
 }
 
-func (a *app) sendLater(chat, text string) {
+func (a *Server) sendLater(chat, text string) {
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
@@ -84,8 +86,8 @@ func (a *app) sendLater(chat, text string) {
 	}()
 }
 
-// waitNotify waits for the messages still sending, at most until ctx ends
-func (a *app) waitNotify(ctx context.Context) {
+// WaitNotify waits for the messages still sending, at most until ctx ends
+func (a *Server) WaitNotify(ctx context.Context) {
 	done := make(chan struct{})
 	go func() { a.wg.Wait(); close(done) }()
 	select {
@@ -95,7 +97,7 @@ func (a *app) waitNotify(ctx context.Context) {
 	}
 }
 
-func (a *app) send(chat, text string) {
+func (a *Server) send(chat, text string) {
 	body, _ := json.Marshal(map[string]any{"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": true})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

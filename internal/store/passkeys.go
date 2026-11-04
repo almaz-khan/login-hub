@@ -1,4 +1,4 @@
-package main
+package store
 
 // Passkeys and WebAuthn challenges in the database. A passkey row keeps go-webauthn's Credential
 // as JSON (public key, flags, sign counter); its id is the credential id. Challenges are single
@@ -15,7 +15,7 @@ import (
 
 const maxChallenges = 1000 // live ones; more means someone is hammering the options endpoint
 
-var errBusy = errors.New("too many logins in progress")
+var ErrBusy = errors.New("too many logins in progress")
 
 func (s *Store) PutChallenge(id, purpose string, data []byte, person string, ttl time.Duration) error {
 	return s.tx(func(tx *sql.Tx) error {
@@ -28,7 +28,7 @@ func (s *Store) PutChallenge(id, purpose string, data []byte, person string, ttl
 			return err
 		}
 		if n >= maxChallenges {
-			return errBusy
+			return ErrBusy
 		}
 		_, err := tx.Exec(`INSERT INTO challenges (id, purpose, data, person, expires_at) VALUES (?, ?, ?, ?, ?)`,
 			id, purpose, data, nullable(person), s.now().Add(ttl).Unix())
@@ -129,9 +129,9 @@ func (s *Store) WebAuthnHandle(person string) ([]byte, error) {
 	return h, err
 }
 
-var errLinkUsed = errors.New("enrollment link used or expired")
+var ErrLinkUsed = errors.New("enrollment link used or expired")
 
-func tokenHash(token string) []byte {
+func TokenHash(token string) []byte {
 	sum := sha256.Sum256([]byte(token))
 	return sum[:]
 }
@@ -145,7 +145,7 @@ func (s *Store) CreateEnrollment(person, actor string, ttl time.Duration) (strin
 			return err
 		}
 		if _, err := tx.Exec(`INSERT INTO enrollments (token_hash, person, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`,
-			tokenHash(token), person, actor, now.Unix(), now.Add(ttl).Unix()); err != nil {
+			TokenHash(token), person, actor, now.Unix(), now.Add(ttl).Unix()); err != nil {
 			return err
 		}
 		return s.audit(tx, actor, "enrollment link", person)
@@ -157,7 +157,7 @@ func (s *Store) CreateEnrollment(person, actor string, ttl time.Duration) (strin
 func (s *Store) Enrollment(token string) (string, error) {
 	var person string
 	err := s.db.QueryRow(`SELECT person FROM enrollments WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`,
-		tokenHash(token), s.now().Unix()).Scan(&person)
+		TokenHash(token), s.now().Unix()).Scan(&person)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -173,7 +173,7 @@ func (s *Store) AddPasskeyWithLink(linkHash []byte, person string, id, data []by
 			return err
 		}
 		if n, _ := res.RowsAffected(); n != 1 {
-			return errLinkUsed
+			return ErrLinkUsed
 		}
 		if _, err := tx.Exec(`INSERT INTO passkeys (id, person, data, label, created_at) VALUES (?, ?, ?, ?, ?)`,
 			id, person, data, label, s.now().Unix()); err != nil {
@@ -214,7 +214,7 @@ type personRow struct {
 }
 
 // People: everyone with their passkeys, for the admin page
-func (s *Store) People() ([]personRow, error) {
+func (s *Store) people() ([]personRow, error) {
 	rows, err := s.db.Query(`SELECT p.key, p.name, coalesce(p.telegram_id, ''), coalesce(p.last_seen_at, 0),
 		k.id, coalesce(k.label, ''), coalesce(k.created_at, 0), coalesce(k.last_used_at, 0)
 		FROM people p LEFT JOIN passkeys k ON k.person = p.key ORDER BY p.key, k.created_at`)

@@ -1,5 +1,9 @@
 *
 !go.mod
 !go.sum
-!*.go
-*_test.go
+!cmd/
+!internal/
+!admin/
+admin/node_modules/
+admin/.svelte-kit/
+**/*_test.go

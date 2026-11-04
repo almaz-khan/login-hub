@@ -1,4 +1,4 @@
-package main
+package hub
 
 // The OpenID Connect side: discovery, JWKS, /authorize and /token. Only what the apps need:
 // the code flow, PKCE S256 (required), client_secret_basic, EdDSA ID tokens. Codes live in memory
@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
+
+	"hub/internal/store"
 )
 
 const (
@@ -51,8 +53,8 @@ func parseKeySeed(s string) (ed25519.PrivateKey, error) {
 	return ed25519.NewKeyFromSeed(seed), nil
 }
 
-// kidOf: a hash of the public key, so the same key always has the same kid
-func kidOf(pub ed25519.PublicKey) string {
+// KeyID: a hash of the public key, so the same key always has the same kid
+func KeyID(pub ed25519.PublicKey) string {
 	sum := sha256.Sum256(pub)
 	return b64.EncodeToString(sum[:12])
 }
@@ -63,7 +65,7 @@ func newKeySet(current, old string) (*keySet, error) {
 		return nil, err
 	}
 	pub := key.Public().(ed25519.PublicKey)
-	ks := &keySet{kid: kidOf(pub)}
+	ks := &keySet{kid: KeyID(pub)}
 	ks.signer, err = jose.NewSigner(jose.SigningKey{Algorithm: jose.EdDSA, Key: key},
 		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", ks.kid))
 	if err != nil {
@@ -79,7 +81,7 @@ func newKeySet(current, old string) (*keySet, error) {
 		if oldPub.Equal(pub) {
 			return nil, errors.New("HUB_SIGNING_KEY_OLD is the same key")
 		}
-		set.Keys = append(set.Keys, jose.JSONWebKey{Key: oldPub, KeyID: kidOf(oldPub), Algorithm: string(jose.EdDSA), Use: "sig"})
+		set.Keys = append(set.Keys, jose.JSONWebKey{Key: oldPub, KeyID: KeyID(oldPub), Algorithm: string(jose.EdDSA), Use: "sig"})
 	}
 	ks.jwks, err = json.Marshal(set)
 	return ks, err
@@ -97,7 +99,7 @@ func (k *keySet) sign(claims map[string]any) (string, error) {
 	return jws.CompactSerialize()
 }
 
-func (a *app) discoveryDoc() []byte {
+func (a *Server) discoveryDoc() []byte {
 	doc, _ := json.Marshal(map[string]any{
 		"issuer":                                         a.issuer,
 		"authorization_endpoint":                         a.issuer + "/authorize",
@@ -125,8 +127,8 @@ func serveJSON(w http.ResponseWriter, body []byte) {
 	_, _ = w.Write(body)
 }
 
-func (a *app) serveDiscovery(w http.ResponseWriter, _ *http.Request) { serveJSON(w, a.discovery) }
-func (a *app) serveJWKS(w http.ResponseWriter, _ *http.Request)      { serveJSON(w, a.keys.jwks) }
+func (a *Server) serveDiscovery(w http.ResponseWriter, _ *http.Request) { serveJSON(w, a.discovery) }
+func (a *Server) serveJWKS(w http.ResponseWriter, _ *http.Request)      { serveJSON(w, a.keys.jwks) }
 
 // grant: what a code stands for, until /token spends it
 type grant struct {
@@ -134,7 +136,7 @@ type grant struct {
 	redirect  string
 	nonce     string
 	challenge string
-	person    Person
+	person    store.Person
 	amr       []string // how they proved it: telegram, passkey
 	authTime  int64
 	username  string // Telegram @username, for a Telegram proof
@@ -168,7 +170,7 @@ func (s *codeStore) take(code string) (grant, bool) {
 
 var pkceValue = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`) // RFC 7636: verifier and S256 challenge
 
-func (a *app) authorize(w http.ResponseWriter, r *http.Request) {
+func (a *Server) authorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	for k, v := range q {
 		if len(v) > 1 {
@@ -190,7 +192,7 @@ func (a *app) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := q.Get("redirect_uri")
-	if !c.redirects[back] {
+	if !c.Redirects[back] {
 		a.log.Printf("authorize refused: %s: redirect_uri %q is not listed", c.ID, back)
 		page(w, http.StatusBadRequest, pageBadLink)
 		return
@@ -248,8 +250,8 @@ func (a *app) authorize(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if !id.proven() && len(c.methods()) == 1 {
-			redirect(w, "/login/"+c.methods()[0]+"?next="+url.QueryEscape(next))
+		if !id.proven() && len(c.Methods()) == 1 {
+			redirect(w, "/login/"+c.Methods()[0]+"?next="+url.QueryEscape(next))
 			return
 		}
 		page(w, http.StatusOK, pageChooser(c, id, next))
@@ -288,7 +290,7 @@ func (a *app) authorize(w http.ResponseWriter, r *http.Request) {
 }
 
 // withQuery: back with these parameters added, plus iss (RFC 9207), keeping back's own query
-func (a *app) withQuery(back string, kv ...string) string {
+func (a *Server) withQuery(back string, kv ...string) string {
 	u, _ := url.Parse(back)
 	q := u.Query()
 	for i := 0; i+1 < len(kv); i += 2 {
@@ -301,7 +303,7 @@ func (a *app) withQuery(back string, kv ...string) string {
 	return u.String()
 }
 
-func (a *app) token(w http.ResponseWriter, r *http.Request) {
+func (a *Server) token(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Set("Cache-Control", "no-store")
 	h.Set("Pragma", "no-cache")
@@ -381,7 +383,7 @@ func (a *app) token(w http.ResponseWriter, r *http.Request) {
 
 // clientAuth: client_secret_basic. RFC 6749 says id and secret are form-encoded before Basic
 // (Go's oauth2 does that, many libraries don't), so both spellings are tried.
-func (a *app) clientAuth(r *http.Request) *client {
+func (a *Server) clientAuth(r *http.Request) *store.App {
 	user, pass, ok := r.BasicAuth()
 	if !ok || pass == "" {
 		return nil
@@ -399,10 +401,10 @@ func (a *app) clientAuth(r *http.Request) *client {
 	if c == nil {
 		return nil
 	}
-	if secretOK(pass, c.secretHash) {
+	if secretOK(pass, c.SecretHash) {
 		return c
 	}
-	if p, err := url.QueryUnescape(pass); err == nil && p != pass && secretOK(p, c.secretHash) {
+	if p, err := url.QueryUnescape(pass); err == nil && p != pass && secretOK(p, c.SecretHash) {
 		return c
 	}
 	a.log.Printf("token refused: %s: wrong client secret", c.ID)
@@ -442,7 +444,7 @@ func contains(list []string, s string) bool {
 }
 
 // broken: the database failed; nothing is let through
-func (a *app) broken(w http.ResponseWriter, err error) {
+func (a *Server) broken(w http.ResponseWriter, err error) {
 	a.log.Printf("error: database: %v", err)
 	page(w, http.StatusInternalServerError, pageFailed("/"))
 }

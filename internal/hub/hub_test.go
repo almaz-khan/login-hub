@@ -1,4 +1,4 @@
-package main
+package hub
 
 // The hub runs as a real HTTP server against a fake Telegram, and the apps are played by go-oidc
 // and golang.org/x/oauth2, the same libraries a Go app uses, so discovery, JWKS, PKCE, the code
@@ -31,6 +31,8 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-jose/go-jose/v4"
 	"golang.org/x/oauth2"
+
+	"hub/internal/store"
 )
 
 const (
@@ -223,7 +225,7 @@ type env struct {
 	bot   *fakeBot
 	srv   *httptest.Server
 	url   string // the hub's address: localhost, since WebAuthn refuses an IP as the RP ID
-	app   atomic.Pointer[app]
+	app   atomic.Pointer[Server]
 	cfg   Config
 	logs  *syncBuffer
 	shift atomic.Int64 // seconds added to the hub's clock
@@ -259,9 +261,10 @@ func setup(t *testing.T, mod ...func(*Config)) *env {
 	e.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { e.app.Load().ServeHTTP(w, r) }))
 	t.Cleanup(e.srv.Close)
 	e.url = strings.Replace(e.srv.URL, "127.0.0.1", "localhost", 1)
-	store := testStore(t, seedJSON())
+	clock := func() time.Time { return time.Now().Add(time.Duration(e.shift.Load()) * time.Second) }
+	db := testStoreAt(t, seedJSON(), clock)
 	e.cfg = Config{
-		Store:         store,
+		Store:         db,
 		Admin:         "Alice",
 		BackupToken:   backupToken,
 		ClientID:      tgClient,
@@ -273,9 +276,8 @@ func setup(t *testing.T, mod ...func(*Config)) *env {
 		TGBase:        e.tg.URL,
 		BotAPI:        e.bot.URL,
 		Log:           log.New(e.logs, "", 0),
-		Now:           func() time.Time { return time.Now().Add(time.Duration(e.shift.Load()) * time.Second) },
+		Now:           clock,
 	}
-	store.now = e.cfg.Now
 	e.reconfigure(mod...)
 	e.tg.clock = e.cfg.Now
 	e.tg.as(alice, "Alice A", "alice")
@@ -287,7 +289,7 @@ func (e *env) reconfigure(mod ...func(*Config)) {
 	for _, m := range mod {
 		m(&e.cfg)
 	}
-	a := newApp(e.cfg)
+	a := New(e.cfg)
 	if len(a.missing) > 0 {
 		e.t.Fatalf("not configured: %v", a.missing)
 	}
@@ -298,14 +300,16 @@ func (e *env) reconfigure(mod ...func(*Config)) {
 const backupToken = "backup-token-backup-token-backup-token"
 
 // testStore: a new database with this seed
-func testStore(t *testing.T, seed string) *Store {
+func testStore(t *testing.T, seed string) *store.Store { return testStoreAt(t, seed, nil) }
+
+func testStoreAt(t *testing.T, seed string, now func() time.Time) *store.Store {
 	t.Helper()
-	s, err := openStore(filepath.Join(t.TempDir(), "hub.db"), nil)
+	s, err := store.Open(filepath.Join(t.TempDir(), "hub.db"), now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	f, err := parseSeed([]byte(seed))
+	f, err := store.ParseSeed([]byte(seed))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +321,7 @@ func testStore(t *testing.T, seed string) *Store {
 
 func (e *env) exec(query string, args ...any) {
 	e.t.Helper()
-	if _, err := e.cfg.Store.db.Exec(query, args...); err != nil {
+	if _, err := e.cfg.Store.DB().Exec(query, args...); err != nil {
 		e.t.Fatal(err)
 	}
 }
@@ -878,7 +882,7 @@ func TestDiscoveryAndHeaders(t *testing.T) {
 	}
 	var jwks jose.JSONWebKeySet
 	_ = json.Unmarshal([]byte(body(b.get(e.url+"/jwks.json"))), &jwks)
-	if len(jwks.Keys) != 1 || jwks.Keys[0].Algorithm != "EdDSA" || jwks.Keys[0].KeyID != kidOf(mustSeed(keyA).Public().(ed25519.PublicKey)) {
+	if len(jwks.Keys) != 1 || jwks.Keys[0].Algorithm != "EdDSA" || jwks.Keys[0].KeyID != KeyID(mustSeed(keyA).Public().(ed25519.PublicKey)) {
 		t.Fatalf("jwks: %+v", jwks)
 	}
 	if resp := b.get(e.url + "/healthz"); resp.StatusCode != http.StatusOK {
@@ -909,7 +913,7 @@ func TestHTTPSCookies(t *testing.T) {
 	e := setup(t)
 	cfg := e.cfg
 	cfg.PublicURL = "https://login.example"
-	a := newApp(cfg)
+	a := New(cfg)
 	w := httptest.NewRecorder()
 	a.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "https://login.example/login/telegram", nil))
 	c := w.Result().Cookies()
@@ -939,7 +943,7 @@ func TestFailsClosed(t *testing.T) {
 	} {
 		cfg := Config{SessionSecret: strings.Repeat("s", 32), ClientID: "1", ClientSecret: "2", PublicURL: "https://login.example", SigningKey: keyA, Store: testStore(t, seedJSON()), Log: log.New(io.Discard, "", 0)}
 		mod(&cfg)
-		a := newApp(cfg)
+		a := New(cfg)
 		for _, p := range []string{"/healthz", "/authorize", "/.well-known/openid-configuration", "/"} {
 			w := httptest.NewRecorder()
 			a.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "https://login.example"+p, nil))
@@ -950,8 +954,8 @@ func TestFailsClosed(t *testing.T) {
 	}
 }
 
-func emptyStore(t *testing.T) *Store {
-	s, err := openStore(filepath.Join(t.TempDir(), "hub.db"), nil)
+func emptyStore(t *testing.T) *store.Store {
+	s, err := store.Open(filepath.Join(t.TempDir(), "hub.db"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -66,7 +66,7 @@ Railway variables on `hub`:
 | Variable | |
 | --- | --- |
 | `PUBLIC_URL` | `https://login.almaz.dev`: the issuer, no trailing slash |
-| `HUB_SIGNING_KEY` | Ed25519 seed, base64 (`go run . keygen`). Only here, never in the database or git |
+| `HUB_SIGNING_KEY` | Ed25519 seed, base64 (`go run ./cmd/hub keygen`). Only here, never in the database or git |
 | `HUB_SIGNING_KEY_OLD` | Only during a rotation (below) |
 | `SESSION_SECRET` | 32+ characters (`openssl rand -hex 32`). Changing it logs everyone out of the hub |
 | `TG_CLIENT_ID`, `TG_CLIENT_SECRET` | The bot's OpenID Connect client, from @BotFather |
@@ -110,14 +110,14 @@ or a failed `quick_check` serves nothing. So does a database without apps.
       "redirect_uris": ["https://app.almaz.dev/auth/callback"],
       "post_logout_redirect_uris": ["https://app.almaz.dev/"],
       "login": ["telegram"],
-      "secret_sha256": "<from go run . secret>",
+      "secret_sha256": "<from go run ./cmd/hub secret>",
       "allow": ["group:club", "<person key>"]
     }
   }
 }
 ```
 
-`go run . check` checks `private/seed.json` the way the hub does. Unknown keys, an unknown person
+`go run ./cmd/hub check` checks `private/seed.json` the way the hub does. Unknown keys, an unknown person
 or group, a redirect URL that isn't https (http only for `localhost`), a duplicate Telegram id or a
 missing secret hash refuse the whole seed, with every reason listed. Person keys are what apps see
 as `sub`: never rename one.
@@ -138,7 +138,7 @@ scripts/seed.sh            # hub check, then HUB_SEED on Railway (no deploy trig
 scripts/seed.sh --delete
 ```
 
-Locally: `go run . import -db data/hub.db private/seed.json`, then run with `DATA_DIR=data`.
+Locally: `go run ./cmd/hub import -db data/hub.db private/seed.json`, then run with `DATA_DIR=data`.
 
 ### Backups
 
@@ -163,7 +163,7 @@ lost device's passkey: «Удалить» on `/admin`.
 
 ### Add an app
 
-1. `go run . secret` prints a client secret and its hash. The secret is hex, so nothing needs
+1. `go run ./cmd/hub secret` prints a client secret and its hash. The secret is hex, so nothing needs
    escaping anywhere.
 2. Add the app (name, exact callback URL(s), logout return URL(s), login methods, the hash,
    access) in the database: the admin UI once it exists; until then the seed for a new database,
@@ -188,20 +188,30 @@ also keeps its own `members.json` as a second check.
 
 ### Rotate the signing key
 
-1. `go run . keygen` → new seed.
+1. `go run ./cmd/hub keygen` → new seed.
 2. On Railway: `HUB_SIGNING_KEY_OLD` = the current `HUB_SIGNING_KEY`, then `HUB_SIGNING_KEY` = the
    new one. Deploy. JWKS lists both; go-oidc refetches JWKS when it meets the new `kid`.
 3. After 10 minutes (ID tokens live 5), delete `HUB_SIGNING_KEY_OLD` and deploy again.
 
 ### Rotate a client secret
 
-`go run . secret`; set the new `OIDC_CLIENT_SECRET` on the app with `--skip-deploys`, change the
+`go run ./cmd/hub secret`; set the new `OIDC_CLIENT_SECRET` on the app with `--skip-deploys`, change the
 app's hash in the hub, then redeploy the app. Logins in the minute between fail once and work on retry.
 
 ### If the hub is down
 
 People already logged in to an app keep using it until that app wants to re-check. New logins and
 re-checks fail on the app's «не получилось войти» page.
+
+## Layout
+
+| Path | |
+| --- | --- |
+| `cmd/hub/` | The binary: serving, and the `keygen`, `secret`, `check`, `import` tools |
+| `internal/store/` | SQLite: migrations, the seed, people, apps, access, passkeys, links, the admin's changes and the audit log |
+| `internal/hub/` | HTTP: OIDC provider, Telegram and passkey logins, enrollment, logout, the admin API and UI serving, pages |
+| `admin/` | The admin UI (SvelteKit); `embed.go` puts its `build/` into the binary |
+| `scripts/` | Deploy, smoke test, seed, backup |
 
 ## Development
 

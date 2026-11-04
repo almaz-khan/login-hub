@@ -1,4 +1,4 @@
-package main
+package hub
 
 // The admin UI's JSON API. Every call needs the admin logged in (HUB_ADMIN) and comes from the
 // hub's own page: Sec-Fetch-Site same-origin (or, without it, the hub's Origin), and a JSON body
@@ -21,35 +21,35 @@ package main
 //	PUT    /admin/api/settings                {notify}
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+
+	"hub/internal/store"
 )
 
-type apiFunc func(r *http.Request, admin *Person) (any, error)
+type apiFunc func(r *http.Request, admin *store.Person) (any, error)
 
-func (a *app) apiRoutes() http.Handler {
+func (a *Server) apiRoutes() http.Handler {
 	mux := http.NewServeMux()
 	h := func(pattern string, fn apiFunc) { mux.Handle(pattern, a.api(fn)) }
 
-	h("GET /admin/api/state", func(r *http.Request, admin *Person) (any, error) {
+	h("GET /admin/api/state", func(r *http.Request, admin *store.Person) (any, error) {
 		st, err := a.store.State()
 		if st != nil {
 			st.Me = admin.Key
 		}
 		return st, err
 	})
-	h("GET /admin/api/audit", func(r *http.Request, _ *Person) (any, error) {
+	h("GET /admin/api/audit", func(r *http.Request, _ *store.Person) (any, error) {
 		before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
 		return a.store.Audit(before, 100)
 	})
 
-	h("POST /admin/api/people", func(r *http.Request, admin *Person) (any, error) {
+	h("POST /admin/api/people", func(r *http.Request, admin *store.Person) (any, error) {
 		var in struct {
 			Key        string `json:"key"`
 			Name       string `json:"name"`
@@ -60,7 +60,7 @@ func (a *app) apiRoutes() http.Handler {
 		}
 		return nil, a.store.CreatePerson(in.Key, in.Name, in.TelegramID, admin.Key)
 	})
-	h("PUT /admin/api/people/{key}", func(r *http.Request, admin *Person) (any, error) {
+	h("PUT /admin/api/people/{key}", func(r *http.Request, admin *store.Person) (any, error) {
 		var in struct {
 			Name       string `json:"name"`
 			TelegramID string `json:"telegram_id"`
@@ -70,10 +70,10 @@ func (a *app) apiRoutes() http.Handler {
 		}
 		return nil, a.store.UpdatePerson(r.PathValue("key"), in.Name, in.TelegramID, admin.Key, a.cfg.Admin)
 	})
-	h("DELETE /admin/api/people/{key}", func(r *http.Request, admin *Person) (any, error) {
+	h("DELETE /admin/api/people/{key}", func(r *http.Request, admin *store.Person) (any, error) {
 		return nil, a.store.DeletePerson(r.PathValue("key"), admin.Key, a.cfg.Admin)
 	})
-	h("POST /admin/api/people/{key}/enroll", func(r *http.Request, admin *Person) (any, error) {
+	h("POST /admin/api/people/{key}/enroll", func(r *http.Request, admin *store.Person) (any, error) {
 		p, err := a.store.Person(r.PathValue("key"))
 		if err != nil {
 			return nil, err
@@ -88,7 +88,7 @@ func (a *app) apiRoutes() http.Handler {
 		a.log.Printf("admin: %s made a passkey link for %s", admin.Key, p.Key)
 		return map[string]any{"link": a.issuer + "/enroll?t=" + token, "expires": a.now().Add(enrollTTL).Unix()}, nil
 	})
-	h("DELETE /admin/api/passkeys/{id}", func(r *http.Request, admin *Person) (any, error) {
+	h("DELETE /admin/api/passkeys/{id}", func(r *http.Request, admin *store.Person) (any, error) {
 		id, err := b64.DecodeString(r.PathValue("id"))
 		if err != nil {
 			return nil, refuse("Нет такого passkey")
@@ -96,7 +96,7 @@ func (a *app) apiRoutes() http.Handler {
 		return nil, a.store.DeletePasskeyChecked(id, admin.Key, a.cfg.Admin)
 	})
 
-	h("POST /admin/api/groups", func(r *http.Request, admin *Person) (any, error) {
+	h("POST /admin/api/groups", func(r *http.Request, admin *store.Person) (any, error) {
 		var in struct {
 			Name string `json:"name"`
 		}
@@ -105,7 +105,7 @@ func (a *app) apiRoutes() http.Handler {
 		}
 		return nil, a.store.CreateGroup(in.Name, admin.Key)
 	})
-	h("PUT /admin/api/groups/{name}/members", func(r *http.Request, admin *Person) (any, error) {
+	h("PUT /admin/api/groups/{name}/members", func(r *http.Request, admin *store.Person) (any, error) {
 		var in struct {
 			Members []string `json:"members"`
 		}
@@ -114,43 +114,43 @@ func (a *app) apiRoutes() http.Handler {
 		}
 		return nil, a.store.SetGroupMembers(r.PathValue("name"), in.Members, admin.Key)
 	})
-	h("DELETE /admin/api/groups/{name}", func(r *http.Request, admin *Person) (any, error) {
+	h("DELETE /admin/api/groups/{name}", func(r *http.Request, admin *store.Person) (any, error) {
 		return nil, a.store.DeleteGroup(r.PathValue("name"), admin.Key)
 	})
 
-	h("POST /admin/api/apps", func(r *http.Request, admin *Person) (any, error) {
+	h("POST /admin/api/apps", func(r *http.Request, admin *store.Person) (any, error) {
 		var in struct {
 			ID string `json:"id"`
-			appInput
+			store.AppInput
 		}
 		if err := readJSON(r, &in); err != nil {
 			return nil, err
 		}
-		secret, hash := newClientSecret()
-		if err := a.store.CreateApp(in.ID, in.appInput, hash, admin.Key); err != nil {
+		secret, hash := store.NewClientSecret()
+		if err := a.store.CreateApp(in.ID, in.AppInput, hash, admin.Key); err != nil {
 			return nil, err
 		}
 		return map[string]string{"secret": secret}, nil
 	})
-	h("PUT /admin/api/apps/{id}", func(r *http.Request, admin *Person) (any, error) {
-		var in appInput
+	h("PUT /admin/api/apps/{id}", func(r *http.Request, admin *store.Person) (any, error) {
+		var in store.AppInput
 		if err := readJSON(r, &in); err != nil {
 			return nil, err
 		}
 		return nil, a.store.UpdateApp(r.PathValue("id"), in, admin.Key)
 	})
-	h("POST /admin/api/apps/{id}/secret", func(r *http.Request, admin *Person) (any, error) {
-		secret, hash := newClientSecret()
+	h("POST /admin/api/apps/{id}/secret", func(r *http.Request, admin *store.Person) (any, error) {
+		secret, hash := store.NewClientSecret()
 		if err := a.store.SetAppSecret(r.PathValue("id"), hash, admin.Key); err != nil {
 			return nil, err
 		}
 		return map[string]string{"secret": secret}, nil
 	})
-	h("DELETE /admin/api/apps/{id}", func(r *http.Request, admin *Person) (any, error) {
+	h("DELETE /admin/api/apps/{id}", func(r *http.Request, admin *store.Person) (any, error) {
 		return nil, a.store.DeleteApp(r.PathValue("id"), admin.Key)
 	})
 
-	h("PUT /admin/api/settings", func(r *http.Request, admin *Person) (any, error) {
+	h("PUT /admin/api/settings", func(r *http.Request, admin *store.Person) (any, error) {
 		var in struct {
 			Notify string `json:"notify"`
 		}
@@ -167,7 +167,7 @@ func (a *app) apiRoutes() http.Handler {
 }
 
 // api: the checks every admin call shares, then fn; a userErr becomes a 400 the UI shows
-func (a *app) api(fn apiFunc) http.Handler {
+func (a *Server) api(fn apiFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		site, origin := r.Header.Get("Sec-Fetch-Site"), r.Header.Get("Origin")
 		write := r.Method != http.MethodGet && r.Method != http.MethodHead
@@ -183,10 +183,10 @@ func (a *app) api(fn apiFunc) http.Handler {
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 		out, err := fn(r, admin)
-		var ue *userErr
+		var ue *store.UserError
 		switch {
 		case errors.As(err, &ue):
-			jsonError(w, http.StatusBadRequest, ue.msg)
+			jsonError(w, http.StatusBadRequest, ue.Msg)
 		case err != nil:
 			a.log.Printf("admin api: %s %s: %v", r.Method, r.URL.Path, err)
 			jsonError(w, http.StatusInternalServerError, "Не получилось: подробности в логе хаба")
@@ -210,11 +210,7 @@ func readJSON(r *http.Request, v any) error {
 	return nil
 }
 
-// newClientSecret: 256 random bits as hex (nothing to escape in Basic auth or a shell), and its hash
-func newClientSecret() (string, []byte) {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	secret := hex.EncodeToString(b)
-	sum := sha256.Sum256([]byte(secret))
-	return secret, sum[:]
+// refuse: an answer the admin reads (a 400), as opposed to a broken database
+func refuse(format string, args ...any) error {
+	return &store.UserError{Msg: fmt.Sprintf(format, args...)}
 }

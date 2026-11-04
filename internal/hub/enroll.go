@@ -1,4 +1,4 @@
-package main
+package hub
 
 // Adding passkeys. Two ways in:
 //
@@ -23,6 +23,8 @@ import (
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+
+	"hub/internal/store"
 )
 
 const (
@@ -31,7 +33,7 @@ const (
 )
 
 // enrollSubject: whom a passkey made now would belong to: the link's person, or the logged-in one
-func (a *app) enrollSubject(r *http.Request, token string) (*Person, error) {
+func (a *Server) enrollSubject(r *http.Request, token string) (*store.Person, error) {
 	if token != "" {
 		key, err := a.store.Enrollment(token)
 		if err != nil || key == "" {
@@ -43,7 +45,7 @@ func (a *app) enrollSubject(r *http.Request, token string) (*Person, error) {
 	return id.person, err
 }
 
-func (a *app) enrollPage(w http.ResponseWriter, r *http.Request) {
+func (a *Server) enrollPage(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("t")
 	p, err := a.enrollSubject(r, token)
 	switch {
@@ -63,7 +65,7 @@ type enrollChallenge struct {
 	LinkHash []byte               `json:"link,omitempty"`
 }
 
-func (a *app) enrollOptions(w http.ResponseWriter, r *http.Request) {
+func (a *Server) enrollOptions(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
 		jsonError(w, http.StatusForbidden, "Только со страницы входа")
 		return
@@ -106,7 +108,7 @@ func (a *app) enrollOptions(w http.ResponseWriter, r *http.Request) {
 	}
 	ch := enrollChallenge{Session: *session}
 	if in.Token != "" {
-		ch.LinkHash = tokenHash(in.Token)
+		ch.LinkHash = store.TokenHash(in.Token)
 	}
 	data, _ := json.Marshal(ch)
 	id := random()
@@ -117,7 +119,7 @@ func (a *app) enrollOptions(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, http.StatusOK, map[string]any{"challenge": id, "options": options})
 }
 
-func (a *app) enrollVerify(w http.ResponseWriter, r *http.Request) {
+func (a *Server) enrollVerify(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
 		jsonError(w, http.StatusForbidden, "Только со страницы входа")
 		return
@@ -179,7 +181,7 @@ func (a *app) enrollVerify(w http.ResponseWriter, r *http.Request) {
 		err = a.store.AddPasskey(p.Key, cred.ID, stored, label, p.Key)
 	}
 	switch {
-	case errors.Is(err, errLinkUsed):
+	case errors.Is(err, store.ErrLinkUsed):
 		jsonError(w, http.StatusForbidden, "Ссылка уже использована или устарела")
 		return
 	case err != nil && strings.Contains(err.Error(), "UNIQUE"):

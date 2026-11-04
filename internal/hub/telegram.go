@@ -1,4 +1,4 @@
-package main
+package hub
 
 // The Telegram login, moved from Running Club: /login/telegram → oauth.telegram.org (code flow, PKCE S256,
 // state, nonce) → /callback, which exchanges the code, verifies the ID token against Telegram's
@@ -16,9 +16,9 @@ import (
 	"strings"
 )
 
-func (a *app) telegramRedirect() string { return a.issuer + "/callback" }
+func (a *Server) telegramRedirect() string { return a.issuer + "/callback" }
 
-func (a *app) login(w http.ResponseWriter, r *http.Request) {
+func (a *Server) login(w http.ResponseWriter, r *http.Request) {
 	o := oauthData{State: random(), Verifier: random(), Nonce: random(), Next: safeNext(r.URL.Query().Get("next"))}
 	a.setCookie(w, a.oauthName(o.State), a.sign("oauth", o, oauthTTL), int(oauthTTL.Seconds()))
 	sum := sha256.Sum256([]byte(o.Verifier))
@@ -35,7 +35,7 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	redirect(w, a.tg+"/auth?"+q.Encode())
 }
 
-func (a *app) callback(w http.ResponseWriter, r *http.Request) {
+func (a *Server) callback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var o oauthData
 	ok := false
@@ -62,7 +62,7 @@ func (a *app) callback(w http.ResponseWriter, r *http.Request) {
 	page(w, http.StatusBadRequest, pageFailed(o.Next))
 }
 
-func (a *app) finish(w http.ResponseWriter, r *http.Request, code string, o oauthData) {
+func (a *Server) finish(w http.ResponseWriter, r *http.Request, code string, o oauthData) {
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},

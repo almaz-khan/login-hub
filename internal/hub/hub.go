@@ -5,7 +5,7 @@
 // and sends them back with a one-time code that the app exchanges at /token for an ID token signed
 // with the hub's Ed25519 key. The hub keeps nothing but its session cookie and codes in memory.
 // Missing or broken configuration fails closed: nothing is served and /healthz says 503.
-package main
+package hub
 
 import (
 	"context"
@@ -20,10 +20,12 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-webauthn/webauthn/webauthn"
+
+	"hub/internal/store"
 )
 
 type Config struct {
-	Store         *Store
+	Store         *store.Store
 	StoreErr      error  // why Store is nil
 	Seed          []byte // HUB_SEED: imported once into an empty database
 	Admin         string // HUB_ADMIN: the person key that is always admin
@@ -48,9 +50,9 @@ var (
 	digits    = regexp.MustCompile(`^\d+$`)
 )
 
-type app struct {
+type Server struct {
 	cfg         Config
-	store       *Store
+	store       *store.Store
 	missing     []string
 	secure      bool
 	issuer      string
@@ -75,8 +77,8 @@ type app struct {
 	wg       sync.WaitGroup       // messages in flight
 }
 
-func newApp(cfg Config) *app {
-	a := &app{cfg: cfg, store: cfg.Store, log: cfg.Log, client: cfg.Client, now: cfg.Now, notified: map[string]time.Time{}}
+func New(cfg Config) *Server {
+	a := &Server{cfg: cfg, store: cfg.Store, log: cfg.Log, client: cfg.Client, now: cfg.Now, notified: map[string]time.Time{}}
 	if a.log == nil {
 		a.log = log.Default()
 	}
@@ -107,7 +109,7 @@ func newApp(cfg Config) *app {
 		{cfg.ClientID == "", "TG_CLIENT_ID"},
 		{cfg.ClientSecret == "", "TG_CLIENT_SECRET"},
 		{len(cfg.SessionSecret) < 32, "SESSION_SECRET (32+ characters)"},
-		{!publicURL.MatchString(a.issuer) || checkAppURL(a.issuer) != nil, "PUBLIC_URL (https://host)"},
+		{!publicURL.MatchString(a.issuer) || store.CheckAppURL(a.issuer) != nil, "PUBLIC_URL (https://host)"},
 		{keyErr != nil, fmt.Sprintf("HUB_SIGNING_KEY (%v)", keyErr)},
 		{cfg.Store == nil, fmt.Sprintf("database (%v)", cfg.StoreErr)},
 	} {
@@ -159,7 +161,7 @@ func newApp(cfg Config) *app {
 }
 
 // routes: path → method → handler; HEAD only where a GET has no side effects
-func (a *app) route(path, method string) (http.HandlerFunc, string) {
+func (a *Server) route(path, method string) (http.HandlerFunc, string) {
 	type m = map[string]http.HandlerFunc
 	var methods m
 	switch path {
@@ -209,7 +211,7 @@ func (a *app) route(path, method string) (http.HandlerFunc, string) {
 	return methods[method], strings.Join(allow, ", ")
 }
 
-func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Set("X-Robots-Tag", "noindex, nofollow")
 	h.Set("X-Content-Type-Options", "nosniff")
@@ -256,7 +258,7 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *app) home(w http.ResponseWriter, r *http.Request) {
+func (a *Server) home(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Add("Vary", "Cookie")
 	id, err := a.resolve(a.session(r))
@@ -267,7 +269,7 @@ func (a *app) home(w http.ResponseWriter, r *http.Request) {
 	page(w, http.StatusOK, pageHome(id, id.person != nil && id.person.Key == a.cfg.Admin && a.cfg.Admin != ""))
 }
 
-func (a *app) setCookie(w http.ResponseWriter, name, value string, maxAge int) {
+func (a *Server) setCookie(w http.ResponseWriter, name, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", MaxAge: maxAge, HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode})
 }
 
@@ -293,14 +295,14 @@ func or(v, fallback string) string {
 
 // seed: HUB_SEED goes into an empty database once; afterwards it is ignored (and should be
 // deleted). A database without apps serves nothing: every login would fail anyway.
-func (a *app) seed() error {
-	people, err := a.store.count("people")
+func (a *Server) seed() error {
+	people, err := a.store.Count("people")
 	if err != nil {
 		return fmt.Errorf("database: %v", err)
 	}
 	switch {
 	case len(a.cfg.Seed) > 0 && people == 0:
-		f, err := parseSeed(a.cfg.Seed)
+		f, err := store.ParseSeed(a.cfg.Seed)
 		if err != nil {
 			return fmt.Errorf("HUB_SEED: %v", err)
 		}
@@ -311,7 +313,7 @@ func (a *app) seed() error {
 	case len(a.cfg.Seed) > 0:
 		a.log.Printf("HUB_SEED ignored: the database already has people. Delete the variable")
 	}
-	apps, err := a.store.count("apps")
+	apps, err := a.store.Count("apps")
 	if err != nil {
 		return fmt.Errorf("database: %v", err)
 	}

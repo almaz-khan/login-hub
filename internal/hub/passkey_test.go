@@ -1,4 +1,4 @@
-package main
+package hub
 
 import (
 	"encoding/json"
@@ -133,7 +133,7 @@ func TestPasskeyLogin(t *testing.T) {
 		t.Fatal("a passkey login went to Telegram")
 	}
 	var used int64
-	_ = e.cfg.Store.db.QueryRow(`SELECT last_used_at FROM passkeys WHERE person = 'Alice'`).Scan(&used)
+	_ = e.cfg.Store.DB().QueryRow(`SELECT last_used_at FROM passkeys WHERE person = 'Alice'`).Scan(&used)
 	if used == 0 {
 		t.Fatal("last_used_at not set")
 	}

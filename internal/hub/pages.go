@@ -1,4 +1,4 @@
-package main
+package hub
 
 // The hub's pages. Self-contained (system fonts, no scripts) and served with a CSP that allows
 // exactly their one inline style. Everything that comes from Telegram or a request is escaped.
@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"hub/internal/store"
 )
 
 const css = `:root{color-scheme:dark}
@@ -191,14 +193,14 @@ func homeLinks(id identity, admin bool) string {
 }
 
 // pageChooser: the app's login methods; for someone already logged in another way, a step-up
-func pageChooser(c *client, id identity, next string) string {
+func pageChooser(c *store.App, id identity, next string) string {
 	var b strings.Builder
 	if id.proven() {
-		fmt.Fprintf(&b, `<p>Ты вошёл как %s через %s, а для «%s» нужен вход через %s.</p>`, account(id), methodsText(id.methods()), e(c.Name), methodsText(c.methods()))
+		fmt.Fprintf(&b, `<p>Ты вошёл как %s через %s, а для «%s» нужен вход через %s.</p>`, account(id), methodsText(id.methods()), e(c.Name), methodsText(c.Methods()))
 	} else {
 		fmt.Fprintf(&b, `<p>Сайт «%s» узнает, кто ты. Войти нужно один раз, дальше сайты открываются сами.</p>`, e(c.Name))
 	}
-	for i, m := range c.methods() {
+	for i, m := range c.Methods() {
 		b.WriteString(loginButton(m, methodButton[m], next, i > 0))
 	}
 	return layout("Вход", `<h1>Вход на «`+e(c.Name)+`»</h1>
@@ -227,7 +229,7 @@ var (
 <p>В этой сборке хаба нет админки: <code>cd admin &amp;&amp; npm ci &amp;&amp; npm run build</code>, потом собери хаб заново.</p>`)
 )
 
-func pageEnroll(p *Person, token string) string {
+func pageEnroll(p *store.Person, token string) string {
 	return layout("Новый passkey", `<h1>Новый passkey</h1>
 <div id="form" class="stack">
 <p>Для <b>`+e(p.Name)+`</b>. Телефон или компьютер попросит Face ID, отпечаток или код устройства, и дальше вход на сайты будет таким же.</p>
@@ -240,7 +242,7 @@ func pageEnroll(p *Person, token string) string {
 }
 
 // pageNoPasskey: a passkey-only app, for someone the hub knows but who has no passkey yet
-func pageNoPasskey(c *client, id identity) string {
+func pageNoPasskey(c *store.App, id identity) string {
 	return layout("Нужен passkey", `<h1>Нужен passkey</h1>
 <p>Ты вошёл как `+account(id)+`, но в «`+e(c.Name)+`» входят только с passkey, а у тебя его ещё нет. Попроси ссылку, чтобы его создать.</p>`)
 }
@@ -251,9 +253,9 @@ func pageFailed(next string) string {
 `+loginButton("telegram", methodButton["telegram"], next, false))
 }
 
-func pageDenied(c *client, id identity, next string) string {
+func pageDenied(c *store.App, id identity, next string) string {
 	var b strings.Builder
-	for _, m := range c.methods() {
+	for _, m := range c.Methods() {
 		b.WriteString(loginButton(m, methodOther[m], next, true))
 	}
 	return layout("Нет доступа", `<h1>Нет доступа</h1>

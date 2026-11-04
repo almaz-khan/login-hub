@@ -1,4 +1,4 @@
-package main
+package hub
 
 // identity: who a session's proofs belong to, read from the database on every request, so a
 // deleted person, a changed Telegram id or a removed passkey count at once. Proofs of two
@@ -8,11 +8,13 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"hub/internal/store"
 )
 
 type identity struct {
-	person *Person  // nil: nobody, or a Telegram account the hub doesn't know
-	tg     *tgProof // the proofs that belong to person (tg alone may be an unknown account)
+	person *store.Person // nil: nobody, or a Telegram account the hub doesn't know
+	tg     *tgProof      // the proofs that belong to person (tg alone may be an unknown account)
 	pk     *pkProof
 }
 
@@ -30,8 +32,8 @@ func (id identity) methods() []string {
 func (id identity) proven() bool { return id.tg != nil || id.pk != nil }
 
 // accepts: the methods this person proved that app c accepts
-func (id identity) accepted(c *client) []string {
-	return slices.DeleteFunc(id.methods(), func(m string) bool { return !c.accepts(m) })
+func (id identity) accepted(c *store.App) []string {
+	return slices.DeleteFunc(id.methods(), func(m string) bool { return !c.Accepts(m) })
 }
 
 // authTime: when they last proved who they are
@@ -46,25 +48,10 @@ func (id identity) authTime() int64 {
 	return t
 }
 
-func (c *client) accepts(method string) bool {
-	return method == "telegram" && c.Telegram || method == "passkey" && c.Passkey
-}
-
-func (c *client) methods() []string {
-	var m []string
-	if c.Telegram {
-		m = append(m, "telegram")
-	}
-	if c.Passkey {
-		m = append(m, "passkey")
-	}
-	return m
-}
-
-func (a *app) resolve(s *sessionData) (identity, error) {
+func (a *Server) resolve(s *sessionData) (identity, error) {
 	fresh := func(at int64) bool { return a.now().Sub(time.Unix(at, 0)) < sessionTTL }
 	var id identity
-	var tgPerson, pkPerson *Person
+	var tgPerson, pkPerson *store.Person
 	var err error
 	if s.TG != nil && fresh(s.TG.At) {
 		if tgPerson, err = a.store.PersonByTelegram(s.TG.ID); err != nil {
@@ -102,7 +89,7 @@ func (a *app) resolve(s *sessionData) (identity, error) {
 }
 
 // addProof: the session after a new login. A proof that belongs to someone else is dropped.
-func (a *app) addProof(old *sessionData, tg *tgProof, pk *pkProof) (*sessionData, *Person, error) {
+func (a *Server) addProof(old *sessionData, tg *tgProof, pk *pkProof) (*sessionData, *store.Person, error) {
 	s := &sessionData{TG: old.TG, PK: old.PK}
 	if tg != nil {
 		s.TG = tg

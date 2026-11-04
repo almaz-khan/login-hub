@@ -237,7 +237,7 @@ go-ahead. Everything that touches real apps, Telegram or Railway comes last.
 
 ## Adding an app
 
-1. `go run . secret` prints a client secret (hex) and its hash.
+1. `go run ./cmd/hub secret` prints a client secret (hex) and its hash.
 2. Add the app (name, exact callback URL, logout return URL, login methods, hash, access): in the
    admin UI, or until then in the seed for a fresh database.
 3. On the app: `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`.

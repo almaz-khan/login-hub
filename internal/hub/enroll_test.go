@@ -1,4 +1,4 @@
-package main
+package hub
 
 import (
 	"encoding/json"
@@ -68,7 +68,7 @@ func TestEnrollByLink(t *testing.T) {
 	ok(t, e.register(phone, soft, token, "  Bob's   iPhone\n"))
 
 	var label string
-	_ = e.cfg.Store.db.QueryRow(`SELECT label FROM passkeys WHERE person = 'Bob'`).Scan(&label)
+	_ = e.cfg.Store.DB().QueryRow(`SELECT label FROM passkeys WHERE person = 'Bob'`).Scan(&label)
 	if label != "Bob's iPhone" {
 		t.Fatalf("label %q", label)
 	}
@@ -113,7 +113,7 @@ func TestEnrollLinkRaces(t *testing.T) {
 		t.Fatalf("second device: %d", late.StatusCode)
 	}
 	var n int
-	_ = e.cfg.Store.db.QueryRow(`SELECT count(*) FROM passkeys WHERE person = 'Bob'`).Scan(&n)
+	_ = e.cfg.Store.DB().QueryRow(`SELECT count(*) FROM passkeys WHERE person = 'Bob'`).Scan(&n)
 	if n != 1 {
 		t.Fatalf("%d passkeys", n)
 	}

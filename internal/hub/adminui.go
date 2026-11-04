@@ -1,22 +1,20 @@
-package main
+package hub
 
 // The admin UI: a SvelteKit app (admin/, adapter-static, base /admin) built into admin/build and
-// embedded in the binary. Only the admin gets any of it, assets included. Its CSP header is made
+// embedded in the binary (package admin). Only the admin gets any of it, assets included. Its CSP header is made
 // here from the inline scripts SvelteKit writes into 200.html, so the page runs exactly those and
 // its own files: script-src 'self' plus their hashes, style-src 'self', connect-src 'self'.
 
 import (
-	"embed"
 	"io/fs"
 	"mime"
 	"net/http"
 	"path"
 	"regexp"
 	"strings"
-)
 
-//go:embed all:admin/build
-var adminBuild embed.FS
+	"hub/admin"
+)
 
 type adminUI struct {
 	files fs.FS
@@ -27,7 +25,7 @@ type adminUI struct {
 var inlineScript = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
 
 func loadAdminUI() *adminUI {
-	sub, _ := fs.Sub(adminBuild, "admin/build")
+	sub := admin.FS()
 	ui := &adminUI{files: sub}
 	index, err := fs.ReadFile(sub, "200.html")
 	if err != nil {
@@ -43,7 +41,7 @@ func loadAdminUI() *adminUI {
 	return ui
 }
 
-func (a *app) adminUI(w http.ResponseWriter, r *http.Request) {
+func (a *Server) adminUI(w http.ResponseWriter, r *http.Request) {
 	if a.admin(r) == nil {
 		page(w, http.StatusForbidden, pageAdminOnly)
 		return

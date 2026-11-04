@@ -1,4 +1,4 @@
-package main
+package hub
 
 // The passkey login, with p2pvc's rules: discoverable credentials, user verification required,
 // and who logs in is decided by the credential id and its signature alone. The user handle the
@@ -19,6 +19,8 @@ import (
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+
+	"hub/internal/store"
 )
 
 const challengeTTL = 5 * time.Minute
@@ -47,7 +49,7 @@ func (u *waUser) WebAuthnName() string                       { return u.name }
 func (u *waUser) WebAuthnDisplayName() string                { return u.name }
 func (u *waUser) WebAuthnCredentials() []webauthn.Credential { return u.creds }
 
-func (a *app) waUser(p *Person) (*waUser, error) {
+func (a *Server) waUser(p *store.Person) (*waUser, error) {
 	handle, err := a.store.WebAuthnHandle(p.Key)
 	if err != nil {
 		return nil, err
@@ -67,14 +69,14 @@ func (a *app) waUser(p *Person) (*waUser, error) {
 	return u, nil
 }
 
-func (a *app) passkeyPage(w http.ResponseWriter, r *http.Request) {
+func (a *Server) passkeyPage(w http.ResponseWriter, r *http.Request) {
 	next := safeNext(r.URL.Query().Get("next"))
 	pageScript(w, http.StatusOK, pagePasskey(next))
 }
 
 // sameOrigin: a request the hub's own page made (Sec-Fetch-Site, or Origin from older browsers),
 // with a JSON body, so no form on another site can drive it
-func (a *app) sameOrigin(r *http.Request) bool {
+func (a *Server) sameOrigin(r *http.Request) bool {
 	site, origin := r.Header.Get("Sec-Fetch-Site"), r.Header.Get("Origin")
 	return (site == "same-origin" || site == "" && origin == a.issuer) && r.Header.Get("Content-Type") == "application/json"
 }
@@ -90,7 +92,7 @@ func jsonError(w http.ResponseWriter, status int, msg string) {
 	jsonOut(w, status, map[string]string{"error": msg})
 }
 
-func (a *app) passkeyOptions(w http.ResponseWriter, r *http.Request) {
+func (a *Server) passkeyOptions(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
 		jsonError(w, http.StatusForbidden, "Только со страницы входа")
 		return
@@ -112,7 +114,7 @@ func (a *app) passkeyOptions(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, http.StatusOK, map[string]any{"challenge": id, "options": options})
 }
 
-func (a *app) passkeyVerify(w http.ResponseWriter, r *http.Request) {
+func (a *Server) passkeyVerify(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
 		jsonError(w, http.StatusForbidden, "Только со страницы входа")
 		return
@@ -148,7 +150,7 @@ func (a *app) passkeyVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var owner *Person
+	var owner *store.Person
 	handler := func(rawID, userHandle []byte) (webauthn.User, error) {
 		key, err := a.store.PasskeyOwner(rawID)
 		if err != nil || key == "" {

@@ -1,4 +1,4 @@
-package main
+package store
 
 // The hub's database: SQLite on the Railway volume (pure Go, modernc.org/sqlite, so the image stays
 // FROM scratch). People, groups, apps and who may open them; later passkeys and enrollment links.
@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -112,15 +113,32 @@ type Store struct {
 	now  func() time.Time
 }
 
-// client: an app, as /authorize, /token and /logout see it
-type client struct {
+// App: an app, as /authorize, /token and /logout see it
+type App struct {
 	ID         string
 	Name       string
 	Telegram   bool // login methods it accepts
 	Passkey    bool
-	redirects  map[string]bool
-	logouts    map[string]bool
-	secretHash []byte
+	Redirects  map[string]bool // exact redirect URLs
+	Logouts    map[string]bool // exact logout return URLs
+	SecretHash []byte          // SHA-256 of the client secret
+}
+
+// Accepts: whether the app takes this login method
+func (c *App) Accepts(method string) bool {
+	return method == "telegram" && c.Telegram || method == "passkey" && c.Passkey
+}
+
+// Methods: the login methods the app takes, telegram first
+func (c *App) Methods() []string {
+	var m []string
+	if c.Telegram {
+		m = append(m, "telegram")
+	}
+	if c.Passkey {
+		m = append(m, "passkey")
+	}
+	return m
 }
 
 type Person struct {
@@ -129,7 +147,7 @@ type Person struct {
 	TelegramID string // "" if none
 }
 
-func openStore(path string, now func() time.Time) (*Store, error) {
+func Open(path string, now func() time.Time) (*Store, error) {
 	if now == nil {
 		now = time.Now
 	}
@@ -156,6 +174,12 @@ func openStore(path string, now func() time.Time) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// DB: the database itself, for tests and maintenance
+func (s *Store) DB() *sql.DB { return s.db }
+
+// Path: the database file
+func (s *Store) Path() string { return s.path }
 
 func (s *Store) migrate() error {
 	var version int
@@ -197,14 +221,14 @@ func (s *Store) audit(tx *sql.Tx, actor, action, detail string) error {
 	return err
 }
 
-func (s *Store) count(table string) (int, error) {
+func (s *Store) Count(table string) (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n)
 	return n, err
 }
 
 // Import writes a checked seed into an empty database, all or nothing
-func (s *Store) Import(f *seedFile, actor string) error {
+func (s *Store) Import(f *Seed, actor string) error {
 	return s.tx(func(tx *sql.Tx) error {
 		var n int
 		if err := tx.QueryRow(`SELECT count(*) FROM people`).Scan(&n); err != nil {
@@ -233,7 +257,7 @@ func (s *Store) Import(f *seedFile, actor string) error {
 		for id, e := range f.Apps {
 			tg, pk := 1, 0
 			if len(e.Login) > 0 {
-				tg, pk = bool01(contains(e.Login, "telegram")), bool01(contains(e.Login, "passkey"))
+				tg, pk = bool01(slices.Contains(e.Login, "telegram")), bool01(slices.Contains(e.Login, "passkey"))
 			}
 			if _, err := tx.Exec(`INSERT INTO apps (id, name, secret_sha256, login_telegram, login_passkey, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
 				id, strings.TrimSpace(e.Name), decodeHex(e.SecretSHA256), tg, pk, now); err != nil {
@@ -268,11 +292,11 @@ func (s *Store) Import(f *seedFile, actor string) error {
 }
 
 // App: one app with everything /authorize, /token and /logout need, or nil
-func (s *Store) App(id string) (*client, error) {
-	c := &client{ID: id, redirects: map[string]bool{}, logouts: map[string]bool{}}
+func (s *Store) App(id string) (*App, error) {
+	c := &App{ID: id, Redirects: map[string]bool{}, Logouts: map[string]bool{}}
 	var tg, pk int
 	err := s.db.QueryRow(`SELECT name, secret_sha256, login_telegram, login_passkey FROM apps WHERE id = ?`, id).
-		Scan(&c.Name, &c.secretHash, &tg, &pk)
+		Scan(&c.Name, &c.SecretHash, &tg, &pk)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -291,9 +315,9 @@ func (s *Store) App(id string) (*client, error) {
 			return nil, err
 		}
 		if kind == "redirect" {
-			c.redirects[u] = true
+			c.Redirects[u] = true
 		} else {
-			c.logouts[u] = true
+			c.Logouts[u] = true
 		}
 	}
 	return c, rows.Err()
