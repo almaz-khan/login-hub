@@ -21,12 +21,26 @@ const (
 	oauthTTL   = 10 * time.Minute
 )
 
-// sessionData: the Telegram account, as Telegram last confirmed it, and when (auth_time)
+// sessionData: what someone has proven in this browser, one proof per method. Proofs never say
+// what anyone may open; who the proofs belong to is looked up on every request (see resolve).
 type sessionData struct {
+	TG *tgProof `json:"tg,omitempty"`
+	PK *pkProof `json:"pk,omitempty"`
+}
+
+// tgProof: a Telegram login, as Telegram confirmed it
+type tgProof struct {
 	ID       string `json:"id"`
 	Name     string `json:"name,omitempty"`
 	Username string `json:"username,omitempty"`
 	At       int64  `json:"at"`
+}
+
+// pkProof: a passkey login (phase 4)
+type pkProof struct {
+	Person string `json:"person"`
+	Cred   string `json:"cred"`
+	At     int64  `json:"at"`
 }
 
 type oauthData struct {
@@ -84,10 +98,17 @@ func (a *app) unsign(token, aud string, data any) bool {
 func (a *app) session(r *http.Request) *sessionData {
 	c, err := r.Cookie(a.sessionName)
 	var s sessionData
-	if err != nil || !a.unsign(c.Value, "session", &s) || !digits.MatchString(s.ID) {
-		return nil
+	if err != nil || !a.unsign(c.Value, "session", &s) {
+		return &sessionData{}
+	}
+	if s.TG != nil && !digits.MatchString(s.TG.ID) {
+		s.TG = nil
 	}
 	return &s
+}
+
+func (a *app) saveSession(w http.ResponseWriter, s *sessionData) {
+	a.setCookie(w, a.sessionName, a.sign("session", s, sessionTTL), int(sessionTTL.Seconds()))
 }
 
 var (

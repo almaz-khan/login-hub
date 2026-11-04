@@ -152,7 +152,7 @@ func TestAccessQueriesAndCascades(t *testing.T) {
 	}
 	var audit string
 	_ = s.db.QueryRow(`SELECT action || ' ' || detail FROM audit`).Scan(&audit)
-	if audit != "import 3 people, 1 groups, 3 apps" {
+	if audit != "import 3 people, 1 groups, 5 apps" {
 		t.Fatal(audit)
 	}
 }
@@ -165,7 +165,7 @@ func TestHubSeed(t *testing.T) {
 	if a := newApp(cfg); len(a.missing) > 0 {
 		t.Fatal(a.missing)
 	}
-	if !strings.Contains(logs.String(), "seeded: 3 people, 3 apps") {
+	if !strings.Contains(logs.String(), "seeded: 3 people, 5 apps") {
 		t.Fatal(logs.String())
 	}
 	// the next start with the variable still set: ignored, said so

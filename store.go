@@ -307,6 +307,10 @@ func (s *Store) Seen(person string) error {
 	return err
 }
 
+// PasskeyOf: whether credential cred is (still) one of person's passkeys. Passkeys come in phase 4;
+// until then no passkey proof can exist.
+func (s *Store) PasskeyOf(cred, person string) (bool, error) { return false, nil }
+
 // Backup: a consistent copy of the whole database at path (which must not exist)
 func (s *Store) Backup(path string) error {
 	_, err := s.db.Exec(`VACUUM INTO ?`, path)

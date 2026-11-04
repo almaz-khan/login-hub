@@ -10,6 +10,7 @@ import (
 	"html"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 const css = `:root{color-scheme:dark}
@@ -63,7 +64,7 @@ func layout(title, body string) string {
 </head>
 <body>
 <main>
-<div class="kick">Вход через Telegram</div>
+<div class="kick">Один вход</div>
 ` + body + `
 </main>
 </body>
@@ -72,9 +73,24 @@ func layout(title, body string) string {
 
 var e = html.EscapeString
 
-// loginButton: a fresh Telegram login, then on to next (an /authorize request)
-func loginButton(label, next string, alt bool) string {
-	href := "/login"
+var (
+	methodButton = map[string]string{"telegram": "Войти через Telegram", "passkey": "Войти с passkey"}
+	methodOther  = map[string]string{"telegram": "Другой аккаунт Telegram", "passkey": "Другой passkey"}
+	methodName   = map[string]string{"telegram": "Telegram", "passkey": "passkey"}
+)
+
+// methodsText: «Telegram», «passkey» or «Telegram или passkey»
+func methodsText(methods []string) string {
+	names := make([]string, len(methods))
+	for i, m := range methods {
+		names[i] = methodName[m]
+	}
+	return strings.Join(names, " или ")
+}
+
+// loginButton: a login with method, then on to next (an /authorize request)
+func loginButton(method, label, next string, alt bool) string {
+	href := "/login/" + method
 	if next = safeNext(next); next != "/" {
 		href += "?next=" + url.QueryEscape(next)
 	}
@@ -85,10 +101,17 @@ func loginButton(label, next string, alt bool) string {
 	return `<a class="` + class + `" href="` + e(href) + `">` + label + `</a>`
 }
 
-func account(who sessionData) string {
-	s := "<b>" + e(or(who.Name, "без имени")) + "</b>"
-	if who.Username != "" {
-		s += " (@" + e(who.Username) + ")"
+func account(id identity) string {
+	name := "без имени"
+	switch {
+	case id.person != nil:
+		name = id.person.Name
+	case id.tg != nil && id.tg.Name != "":
+		name = id.tg.Name
+	}
+	s := "<b>" + e(name) + "</b>"
+	if u := id.username(); u != "" {
+		s += " (@" + e(u) + ")"
 	}
 	return s
 }
@@ -101,30 +124,49 @@ var (
 <p>Сайт, с которого ты пришёл, прислал ссылку, которой здесь не знают. Вернись на сайт и попробуй ещё раз. Если не выйдет, напиши тому, кто дал ссылку.</p>`)
 )
 
-func pageHome(who *sessionData) string {
-	if who == nil {
+func pageHome(id identity) string {
+	if !id.proven() {
 		return layout("Вход", `<h1>Один вход на все сайты</h1>
-<p>Сайты отправляют сюда, чтобы узнать, кто ты. Войти через Telegram нужно один раз, дальше сайты открываются сами.</p>
+<p>Сайты отправляют сюда, чтобы узнать, кто ты. Войти нужно один раз, дальше сайты открываются сами.</p>
 <p class="note">Сюда приходят с сайта: открой нужный сайт, он сам пришлёт на вход.</p>`)
 	}
 	return layout("Вход", `<h1>Ты вошёл</h1>
-<p>Как `+account(*who)+`. Сайты, куда у тебя есть доступ, откроются без Telegram.</p>
+<p>Как `+account(id)+`, через `+methodsText(id.methods())+`. Сайты, куда у тебя есть доступ, откроются сами.</p>
 <a class="btn alt" href="/logout">Выйти на всех сайтах</a>`)
+}
+
+// pageChooser: the app's login methods; for someone already logged in another way, a step-up
+func pageChooser(c *client, id identity, next string) string {
+	var b strings.Builder
+	if id.proven() {
+		fmt.Fprintf(&b, `<p>Ты вошёл как %s через %s, а для «%s» нужен вход через %s.</p>`, account(id), methodsText(id.methods()), e(c.Name), methodsText(c.methods()))
+	} else {
+		fmt.Fprintf(&b, `<p>Сайт «%s» узнает, кто ты. Войти нужно один раз, дальше сайты открываются сами.</p>`, e(c.Name))
+	}
+	for i, m := range c.methods() {
+		b.WriteString(loginButton(m, methodButton[m], next, i > 0))
+	}
+	return layout("Вход", `<h1>Вход на «`+e(c.Name)+`»</h1>
+`+b.String())
 }
 
 func pageFailed(next string) string {
 	return layout("Не получилось войти", `<h1>Не получилось войти</h1>
-<p>Telegram не подтвердил вход, или ссылка для входа устарела. Попробуй ещё раз.</p>
-`+loginButton("Войти через Telegram", next, false))
+<p>Вход не подтвердился, или ссылка для входа устарела. Попробуй ещё раз.</p>
+`+loginButton("telegram", methodButton["telegram"], next, false))
 }
 
-func pageDenied(appName string, who sessionData, next string) string {
+func pageDenied(c *client, id identity, next string) string {
+	var b strings.Builder
+	for _, m := range c.methods() {
+		b.WriteString(loginButton(m, methodOther[m], next, true))
+	}
 	return layout("Нет доступа", `<h1>Нет доступа</h1>
-<p>У аккаунта `+account(who)+` нет доступа к сайту «`+e(appName)+`». Если он нужен, напиши тому, кто прислал ссылку.</p>
-`+loginButton("Войти другим аккаунтом", next, true))
+<p>У аккаунта `+account(id)+` нет доступа к сайту «`+e(c.Name)+`». Если он нужен, напиши тому, кто прислал ссылку.</p>
+`+b.String())
 }
 
-func pageLogout(who sessionData, t logoutTarget) string {
+func pageLogout(id identity, t logoutTarget) string {
 	hidden := ""
 	if t.app != nil {
 		hidden += `<input type="hidden" name="client_id" value="` + e(t.app.ID) + `">`
@@ -136,7 +178,7 @@ func pageLogout(who sessionData, t logoutTarget) string {
 		hidden += `<input type="hidden" name="state" value="` + e(t.state) + `">`
 	}
 	return layout("Выход", `<h1>Выйти на всех сайтах?</h1>
-<p>Ты вошёл как `+account(who)+`. Это устройство забудет вход, и чтобы вернуться на любой сайт, понадобится Telegram.</p>
+<p>Ты вошёл как `+account(id)+`. Это устройство забудет вход, и чтобы вернуться на любой сайт, понадобится войти снова.</p>
 <p class="note">Сайты, открытые сейчас, попросят войти заново не позже чем через сутки.</p>
 <form method="post" action="/logout">`+hidden+`<button class="btn" type="submit">Выйти на всех сайтах</button></form>`)
 }
@@ -147,5 +189,5 @@ func pageLoggedOut(t logoutTarget) string {
 		back = `<a class="btn alt" href="` + e(t.url()) + `">Вернуться на «` + e(t.app.Name) + `»</a>`
 	}
 	return layout("Выход", `<h1>Ты вышел</h1>
-<p>Это устройство больше не помнит вход через Telegram.</p>`+back)
+<p>Это устройство больше не помнит вход.</p>`+back)
 }

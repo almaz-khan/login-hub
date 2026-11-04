@@ -50,10 +50,12 @@ var secrets = map[string]string{
 	"running-club": strings.Repeat("ab", 32),
 	"stub":         strings.Repeat("cd", 32),
 	"plus":         "a+b/c=d",
+	"both":         strings.Repeat("ef", 32),
+	"pk":           strings.Repeat("01", 32),
 }
 
 func appURL(client string) string {
-	port := map[string]string{"running-club": "1", "stub": "2", "plus": "3"}[client]
+	port := map[string]string{"running-club": "1", "stub": "2", "plus": "3", "both": "4", "pk": "5"}[client]
 	return "http://localhost:" + port
 }
 
@@ -67,13 +69,18 @@ func seedJSON(allowRC ...string) string {
 		allowRC = []string{"group:club"}
 	}
 	apps := map[string]any{}
-	for id, allow := range map[string][]string{"running-club": allowRC, "stub": {"group:club", "Bob"}, "plus": {"Alice"}} {
+	login := map[string][]string{"both": {"telegram", "passkey"}, "pk": {"passkey"}}
+	for id, allow := range map[string][]string{"running-club": allowRC, "stub": {"group:club", "Bob"}, "plus": {"Alice"}, "both": {"group:club"}, "pk": {"group:club"}} {
+		methods := login[id]
+		if methods == nil {
+			methods = []string{"telegram"}
+		}
 		apps[id] = map[string]any{
-			"name":                      map[string]string{"running-club": "Running Club Wrapped", "stub": "Stub", "plus": "Plus"}[id],
+			"name":                      map[string]string{"running-club": "Running Club Wrapped", "stub": "Stub", "plus": "Plus", "both": "Both", "pk": "Passkey Only"}[id],
 			"redirect_uris":             []string{appURL(id) + "/auth/callback"},
 			"post_logout_redirect_uris": []string{appURL(id) + "/"},
 			"secret_sha256":             sha(secrets[id]),
-			"login":                     []string{"telegram"},
+			"login":                     methods,
 			"allow":                     allow,
 		}
 	}
@@ -99,6 +106,7 @@ type fakeTG struct {
 	auths    int
 	nonce    map[string]string // code → nonce, challenge
 	chal     map[string]string
+	clock    func() time.Time // the hub's test clock
 	badNonce bool
 }
 
@@ -134,7 +142,11 @@ func newFakeTG(t *testing.T) *fakeTG {
 		case f.chal[code] == "" || b64.EncodeToString(sum[:]) != f.chal[code]:
 			http.Error(w, `{"error":"invalid_grant"}`, http.StatusBadRequest)
 		default:
-			claims := map[string]any{"iss": f.URL, "aud": tgClient, "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "nonce": f.nonce[code]}
+			now := time.Now()
+			if f.clock != nil {
+				now = f.clock()
+			}
+			claims := map[string]any{"iss": f.URL, "aud": tgClient, "exp": now.Add(time.Hour).Unix(), "iat": now.Unix(), "nonce": f.nonce[code]}
 			if f.badNonce {
 				claims["nonce"] = "other"
 			}
@@ -262,6 +274,7 @@ func setup(t *testing.T, mod ...func(*Config)) *env {
 		Now:           func() time.Time { return time.Now().Add(time.Duration(e.shift.Load()) * time.Second) },
 	}
 	e.reconfigure(mod...)
+	e.tg.clock = e.cfg.Now
 	e.tg.as(alice, "Alice A", "alice")
 	return e
 }
@@ -640,7 +653,7 @@ func TestAccessPerApp(t *testing.T) {
 		if resp.StatusCode != http.StatusForbidden || !strings.Contains(page, "Running Club Wrapped") || !strings.Contains(page, "@bob") || resp.Header.Get("Location") != "" {
 			t.Fatalf("denied: %d %.300s", resp.StatusCode, page)
 		}
-		if !strings.Contains(page, `href="/login?next=%2Fauthorize%3F`) {
+		if !strings.Contains(page, `href="/login/telegram?next=%2Fauthorize%3F`) {
 			t.Fatalf("no other-account button: %s", page)
 		}
 	}
@@ -878,7 +891,7 @@ func TestHTTPSCookies(t *testing.T) {
 	cfg.PublicURL = "https://login.example"
 	a := newApp(cfg)
 	w := httptest.NewRecorder()
-	a.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "https://login.example/login", nil))
+	a.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "https://login.example/login/telegram", nil))
 	c := w.Result().Cookies()
 	if len(c) != 1 || !strings.HasPrefix(c[0].Name, "__Host-hub_oauth_") || !c[0].Secure || !c[0].HttpOnly || c[0].Path != "/" || c[0].SameSite != http.SameSiteLaxMode {
 		t.Fatalf("cookie: %+v", c)

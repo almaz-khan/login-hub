@@ -24,16 +24,28 @@ Railway volume. The seed for a new database is `private/seed.json` (gitignored).
 | `GET /jwks.json` | The signing key, plus the old one during a rotation |
 | `GET /authorize` | Client and exact redirect URL first (a mismatch shows an error page and never redirects), then PKCE S256, state, nonce, `openid`; logs in if needed; checks access in the database; redirects with a 60-second single-use code and `iss` |
 | `POST /token` | Basic auth with the client secret, code, same redirect URL, PKCE verifier → `id_token` (5 min) and an `access_token` nothing accepts |
-| `GET /login`, `GET /callback` | The Telegram login (`/callback` is the redirect URL registered in @BotFather) |
+| `GET /login/telegram`, `GET /callback` | The Telegram login (`/callback` is the redirect URL registered in @BotFather) |
+| `GET /login/passkey` | The passkey login (phase 4) |
 | `GET /logout` | «Выйти на всех сайтах?»; takes `client_id`, `post_logout_redirect_uri` (listed for that app) and `state` |
 | `POST /logout` | Same-origin only (not same-site: every `*.almaz.dev` app is same-site); ends the hub session |
 | `GET /admin/backup` | A consistent copy of the database: the admin (`HUB_ADMIN`) logged in, or `Authorization: Bearer $HUB_BACKUP_TOKEN` |
 | `GET /healthz` | `200 ok`, or `503` when anything is missing or broken, so Railway never switches to a hub that would serve nothing |
 
 The ID token: `sub` = the person key (stable, never renamed), `aud` = the client id, `nonce`,
-`name`, `auth_time`, `telegram_id` when the person has one, `preferred_username` for a Telegram login.
+`name`, `auth_time`, `amr` (`telegram`, `passkey`: how they proved it), `telegram_id` when the
+person has one, `preferred_username` for a Telegram login.
 
-`prompt=none` is supported: `error=login_required` without a hub session, `error=access_denied`
+### Login methods
+
+Each app accepts `telegram`, `passkey` or both. The hub session holds one proof per method (each
+valid 180 days), and `/authorize` lets someone through silently only with a proof the app accepts:
+
+- no proof, one method: straight to that method's login;
+- no proof, both: a chooser;
+- only a proof the app doesn't accept: a step-up page with the app's methods;
+- proofs of two different people never add up: the newer login wins.
+
+`prompt=none` is supported: `error=login_required` without a proof the app accepts, `error=access_denied`
 for someone not allowed.
 
 ## Настройка

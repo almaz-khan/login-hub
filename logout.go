@@ -43,8 +43,12 @@ func (t logoutTarget) url() string {
 func (a *app) logoutPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Vary", "Cookie")
 	t := a.logoutTarget(r.URL.Query())
-	who := a.session(r)
-	if who == nil { // nothing to ask about
+	id, err := a.resolve(a.session(r))
+	if err != nil {
+		a.broken(w, err)
+		return
+	}
+	if !id.proven() { // nothing to ask about
 		if t.back != "" {
 			redirect(w, t.url())
 			return
@@ -52,7 +56,7 @@ func (a *app) logoutPage(w http.ResponseWriter, r *http.Request) {
 		page(w, http.StatusOK, pageLoggedOut(t))
 		return
 	}
-	pageCSP(w, http.StatusOK, pageLogout(*who, t), formActionFor(t.back))
+	pageCSP(w, http.StatusOK, pageLogout(id, t), formActionFor(t.back))
 }
 
 // logout: a POST from the hub's own page only (not merely the same site: every app on
@@ -69,8 +73,8 @@ func (a *app) logout(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 	_ = r.ParseForm()
 	t := a.logoutTarget(r.PostForm)
-	if who := a.session(r); who != nil {
-		a.log.Printf("logout: telegram %s (%s)", who.ID, who.Name)
+	if id, err := a.resolve(a.session(r)); err == nil && id.proven() {
+		a.log.Printf("logout: %s", id.label())
 	}
 	a.setCookie(w, a.sessionName, "", -1)
 	if t.back != "" {

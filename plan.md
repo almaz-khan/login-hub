@@ -64,8 +64,9 @@ Migrations are numbered and run at start, in one transaction each (`PRAGMA user_
 
 - A **person** has a key, a name, optionally a Telegram id, and zero or more passkeys.
 - An **app** accepts `telegram`, `passkey` or both (default `telegram`).
-- The **hub session** (180 days) records who someone is and **which methods they have proven**.
-  Logging in another way adds that method; it must be the same person.
+- The **hub session** records **proofs**, one per method (each valid 180 days); who they belong to
+  is looked up on every request. Logging in another way adds that proof. Proofs of two different
+  people never add up: the newer login wins and the older proof is dropped.
 - The **ID token** carries `sub` = person key, `telegram_id` when the person has one, and `amr`
   (`telegram` and/or `passkey`): how they proved it this session.
 
@@ -214,7 +215,7 @@ deployed without a go-ahead.
 2. ✅ **SQLite storage + people:** migrations, the schema above (without passkeys), seed import
    (`HUB_SEED`, `hub import`), access read from the database, `sub` = person key and
    `telegram_id`, backups (`/admin/backup`, `HUB_BACKUP_TOKEN`), fail closed on a bad database.
-3. **Login methods per app:** proven methods in the session, the chooser and step-up pages, `amr`.
+3. ✅ **Login methods per app:** proven methods in the session, the chooser and step-up pages, `amr`.
    Telegram is still the only working method.
 4. **Passkey login:** WebAuthn with a software authenticator in the tests: wrong origin or RP ID,
    no user verification, unknown or removed credential, a passkey-only app refusing a Telegram

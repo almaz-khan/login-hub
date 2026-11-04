@@ -1,9 +1,9 @@
 package main
 
-// The Telegram login, moved from Running Club: /login → oauth.telegram.org (code flow, PKCE S256,
+// The Telegram login, moved from Running Club: /login/telegram → oauth.telegram.org (code flow, PKCE S256,
 // state, nonce) → /callback, which exchanges the code, verifies the ID token against Telegram's
-// JWKS (signature, issuer, audience, expiry, nonce) and sets the hub session. Nobody is refused
-// here: the session only says who someone is, and /authorize decides what they may open.
+// JWKS (signature, issuer, audience, expiry, nonce) and adds a Telegram proof to the hub session.
+// Nobody is refused here: /authorize decides what the proof is good for.
 
 import (
 	"bytes"
@@ -109,9 +109,18 @@ func (a *app) finish(w http.ResponseWriter, r *http.Request, code string, o oaut
 		page(w, http.StatusBadGateway, pageFailed(o.Next))
 		return
 	}
-	s := sessionData{ID: id, Name: str(claims["name"]), Username: str(claims["preferred_username"]), At: a.now().Unix()}
-	a.log.Printf("telegram login: %s (%s @%s)", id, s.Name, s.Username)
-	a.setCookie(w, a.sessionName, a.sign("session", s, sessionTTL), int(sessionTTL.Seconds()))
+	tg := &tgProof{ID: id, Name: str(claims["name"]), Username: str(claims["preferred_username"]), At: a.now().Unix()}
+	s, person, err := a.addProof(a.session(r), tg, nil)
+	if err != nil {
+		a.broken(w, err)
+		return
+	}
+	key := "unknown to the hub"
+	if person != nil {
+		key = person.Key
+	}
+	a.log.Printf("telegram login: %s (%s @%s), %s", id, tg.Name, tg.Username, key)
+	a.saveSession(w, s)
 	redirect(w, o.Next)
 }
 

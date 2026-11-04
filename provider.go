@@ -110,7 +110,7 @@ func (a *app) discoveryDoc() []byte {
 		"subject_types_supported":                        []string{"public"},
 		"id_token_signing_alg_values_supported":          []string{string(jose.EdDSA)},
 		"scopes_supported":                               []string{"openid", "profile"},
-		"claims_supported":                               []string{"iss", "sub", "aud", "exp", "iat", "auth_time", "nonce", "name", "preferred_username", "telegram_id"},
+		"claims_supported":                               []string{"iss", "sub", "aud", "exp", "iat", "auth_time", "nonce", "name", "preferred_username", "telegram_id", "amr"},
 		"token_endpoint_auth_methods_supported":          []string{"client_secret_basic"},
 		"code_challenge_methods_supported":               []string{"S256"},
 		"prompt_values_supported":                        []string{"none"},
@@ -134,8 +134,10 @@ type grant struct {
 	redirect  string
 	nonce     string
 	challenge string
-	who       sessionData // how they logged in (username, auth_time)
 	person    Person
+	amr       []string // how they proved it: telegram, passkey
+	authTime  int64
+	username  string // Telegram @username, for a Telegram proof
 	exp       time.Time
 }
 
@@ -223,52 +225,54 @@ func (a *app) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	who := a.session(r)
-	if who == nil {
-		if contains(prompt, "none") {
-			fail("login_required", "no hub session")
-			return
-		}
-		redirect(w, "/login?next="+url.QueryEscape("/authorize?"+r.URL.RawQuery))
-		return
-	}
-	// who they are and what they may open are read from the database on every /authorize,
-	// never stored in the session: a removed person or a changed allow list applies at once
-	person, err := a.store.PersonByTelegram(who.ID)
+	next := "/authorize?" + r.URL.RawQuery
+	id, err := a.resolve(a.session(r))
 	if err != nil {
 		a.broken(w, err)
 		return
 	}
+	// a proof this app accepts? If not: log in, or step up to a method it does accept
+	if len(id.accepted(c)) == 0 {
+		if contains(prompt, "none") {
+			fail("login_required", "no hub login this app accepts")
+			return
+		}
+		if !id.proven() && len(c.methods()) == 1 {
+			redirect(w, "/login/"+c.methods()[0]+"?next="+url.QueryEscape(next))
+			return
+		}
+		page(w, http.StatusOK, pageChooser(c, id, next))
+		return
+	}
+	// who they are and what they may open are read from the database on every /authorize,
+	// never stored in the session: a removed person or a changed allow list applies at once
 	allowed := false
-	if person != nil {
-		if allowed, err = a.store.Allowed(c.ID, person.Key); err != nil {
+	if id.person != nil {
+		if allowed, err = a.store.Allowed(c.ID, id.person.Key); err != nil {
 			a.broken(w, err)
 			return
 		}
 	}
 	if !allowed {
-		label := "unknown Telegram account"
-		if person != nil {
-			label = person.Key
-		}
-		a.log.Printf("access denied: %s, telegram %s (%s @%s) → %s", label, who.ID, who.Name, who.Username, c.ID)
-		a.notifyDenied(*who, person, c)
+		a.log.Printf("access denied: %s → %s", id.label(), c.ID)
+		a.notifyDenied(id, c)
 		if contains(prompt, "none") {
 			fail("access_denied", "not allowed for this app")
 			return
 		}
-		page(w, http.StatusForbidden, pageDenied(c.Name, *who, "/authorize?"+r.URL.RawQuery))
+		page(w, http.StatusForbidden, pageDenied(c, id, next))
 		return
 	}
 	code := random()
 	a.codes.put(code, grant{
 		client: c.ID, redirect: back, nonce: q.Get("nonce"), challenge: q.Get("code_challenge"),
-		who: *who, person: *person, exp: a.now().Add(codeTTL),
+		person: *id.person, amr: id.methods(), authTime: id.authTime(), username: id.username(),
+		exp: a.now().Add(codeTTL),
 	}, a.now())
-	if err := a.store.Seen(person.Key); err != nil {
+	if err := a.store.Seen(id.person.Key); err != nil {
 		a.log.Printf("last seen: %v", err)
 	}
-	a.log.Printf("authorize: %s → %s", person.Key, c.ID)
+	a.log.Printf("authorize: %s (%s) → %s", id.person.Key, strings.Join(id.methods(), "+"), c.ID)
 	redirect(w, a.withQuery(back, "code", code, "state", state))
 }
 
@@ -337,15 +341,16 @@ func (a *app) token(w http.ResponseWriter, r *http.Request) {
 		"aud":       c.ID,
 		"iat":       now.Unix(),
 		"exp":       now.Add(idTokenTTL).Unix(),
-		"auth_time": g.who.At,
+		"auth_time": g.authTime,
+		"amr":       g.amr,
 		"nonce":     g.nonce,
 		"name":      g.person.Name,
 	}
 	if g.person.TelegramID != "" {
 		claims["telegram_id"] = g.person.TelegramID
 	}
-	if g.who.Username != "" {
-		claims["preferred_username"] = g.who.Username
+	if g.username != "" {
+		claims["preferred_username"] = g.username
 	}
 	idToken, err := a.keys.sign(claims)
 	if err != nil {

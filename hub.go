@@ -162,7 +162,7 @@ func (a *app) route(path, method string) (http.HandlerFunc, string) {
 		methods = m{"GET": a.authorize}
 	case "/token":
 		methods = m{"POST": a.token}
-	case "/login":
+	case "/login/telegram":
 		methods = m{"GET": a.login}
 	case "/callback":
 		methods = m{"GET": a.callback}
@@ -228,7 +228,12 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (a *app) home(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Add("Vary", "Cookie")
-	page(w, http.StatusOK, pageHome(a.session(r)))
+	id, err := a.resolve(a.session(r))
+	if err != nil {
+		a.broken(w, err)
+		return
+	}
+	page(w, http.StatusOK, pageHome(id))
 }
 
 func (a *app) setCookie(w http.ResponseWriter, name, value string, maxAge int) {

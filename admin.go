@@ -18,15 +18,11 @@ func (a *app) admin(r *http.Request) *Person {
 	if a.cfg.Admin == "" {
 		return nil
 	}
-	who := a.session(r)
-	if who == nil {
+	id, err := a.resolve(a.session(r))
+	if err != nil || id.person == nil || id.person.Key != a.cfg.Admin {
 		return nil
 	}
-	p, err := a.store.PersonByTelegram(who.ID)
-	if err != nil || p == nil || p.Key != a.cfg.Admin {
-		return nil
-	}
-	return p
+	return id.person
 }
 
 func (a *app) backupToken(r *http.Request) bool {

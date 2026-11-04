@@ -15,13 +15,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
 const notifyEvery = time.Hour
 
-// notifyDenied: person is nil for a Telegram account the hub doesn't know
-func (a *app) notifyDenied(who sessionData, person *Person, c *client) {
+// notifyDenied: id.person is nil for a Telegram account the hub doesn't know
+func (a *app) notifyDenied(id identity, c *client) {
 	if a.cfg.BotToken == "" {
 		return
 	}
@@ -29,7 +30,7 @@ func (a *app) notifyDenied(who sessionData, person *Person, c *client) {
 	if err != nil || to == nil || to.TelegramID == "" {
 		return
 	}
-	key := who.ID + " " + c.ID
+	key := id.label() + " " + c.ID
 	now := a.now()
 	a.notifyMu.Lock()
 	if last, ok := a.notified[key]; ok && now.Sub(last) < notifyEvery {
@@ -45,14 +46,16 @@ func (a *app) notifyDenied(who sessionData, person *Person, c *client) {
 	a.notifyMu.Unlock()
 
 	// HTML so the name links to the profile; everything from Telegram is escaped
-	label := fmt.Sprintf(`<a href="tg://user?id=%s">%s</a>`, who.ID, html.EscapeString(or(who.Name, "Без имени")))
-	text := "🚫 Нет доступа к «" + html.EscapeString(c.Name) + "»\n" + label
-	if who.Username != "" {
-		text += " (@" + html.EscapeString(who.Username) + ")"
+	text := "🚫 Нет доступа к «" + html.EscapeString(c.Name) + "»"
+	if tg := id.tg; tg != nil {
+		text += "\n" + fmt.Sprintf(`<a href="tg://user?id=%s">%s</a>`, tg.ID, html.EscapeString(or(tg.Name, "Без имени")))
+		if tg.Username != "" {
+			text += " (@" + html.EscapeString(tg.Username) + ")"
+		}
+		text += "\nTelegram id: " + tg.ID
 	}
-	text += "\nTelegram id: " + who.ID
-	if person != nil {
-		text += "\nВ хабе: " + html.EscapeString(person.Key)
+	if id.person != nil {
+		text += "\nВ хабе: " + html.EscapeString(id.person.Key) + ", вход: " + strings.Join(id.methods(), " + ")
 	} else {
 		text += "\nВ хабе такого человека нет"
 	}
