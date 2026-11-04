@@ -101,9 +101,6 @@ func ParseSeed(raw []byte) (*Seed, error) {
 			}
 		}
 	}
-	if len(f.Apps) == 0 {
-		bad("apps: empty")
-	}
 	for id, e := range f.Apps {
 		for _, err := range checkApp(id, e.Name, e.RedirectURIs, e.PostLogoutRedirectURIs, e.Login, e.SecretSHA256) {
 			bad("apps.%s: %s", id, err)

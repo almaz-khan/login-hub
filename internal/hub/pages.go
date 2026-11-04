@@ -193,14 +193,14 @@ func homeLinks(id identity, admin bool) string {
 }
 
 // pageChooser: the app's login methods; for someone already logged in another way, a step-up
-func pageChooser(c *store.App, id identity, next string) string {
+func pageChooser(c *store.App, id identity, next string, methods []string) string {
 	var b strings.Builder
 	if id.proven() {
-		fmt.Fprintf(&b, `<p>Ты вошёл как %s через %s, а для «%s» нужен вход через %s.</p>`, account(id), methodsText(id.methods()), e(c.Name), methodsText(c.Methods()))
+		fmt.Fprintf(&b, `<p>Ты вошёл как %s через %s, а для «%s» нужен вход через %s.</p>`, account(id), methodsText(id.methods()), e(c.Name), methodsText(methods))
 	} else {
 		fmt.Fprintf(&b, `<p>Сайт «%s» узнает, кто ты. Войти нужно один раз, дальше сайты открываются сами.</p>`, e(c.Name))
 	}
-	for i, m := range c.Methods() {
+	for i, m := range methods {
 		b.WriteString(loginButton(m, methodButton[m], next, i > 0))
 	}
 	return layout("Вход", `<h1>Вход на «`+e(c.Name)+`»</h1>
@@ -241,6 +241,16 @@ func pageEnroll(p *store.Person, token string) string {
 <script>`+passkeyJS+`</script>`)
 }
 
+// pageTelegramOff: a Telegram login asked for on a hub without one; c is the app, if known
+func pageTelegramOff(c *store.App) string {
+	what := "Вход через Telegram"
+	if c != nil {
+		what = "«" + e(c.Name) + "» принимает только вход через Telegram, а он"
+	}
+	return layout("Telegram выключен", `<h1>Telegram пока выключен</h1>
+<p>`+what+` здесь ещё не настроен. Войти можно с passkey, если сайт его принимает.</p>`)
+}
+
 // pageNoPasskey: a passkey-only app, for someone the hub knows but who has no passkey yet
 func pageNoPasskey(c *store.App, id identity) string {
 	return layout("Нужен passkey", `<h1>Нужен passkey</h1>
@@ -253,9 +263,9 @@ func pageFailed(next string) string {
 `+loginButton("telegram", methodButton["telegram"], next, false))
 }
 
-func pageDenied(c *store.App, id identity, next string) string {
+func pageDenied(c *store.App, id identity, next string, methods []string) string {
 	var b strings.Builder
-	for _, m := range c.Methods() {
+	for _, m := range methods {
 		b.WriteString(loginButton(m, methodOther[m], next, true))
 	}
 	return layout("Нет доступа", `<h1>Нет доступа</h1>

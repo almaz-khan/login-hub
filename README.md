@@ -70,13 +70,14 @@ Railway variables on `hub`:
 | `HUB_SIGNING_KEY` | Ed25519 seed, base64 (`go run ./cmd/hub keygen`). Only here, never in the database or git |
 | `HUB_SIGNING_KEY_OLD` | Only during a rotation (below) |
 | `SESSION_SECRET` | 32+ characters (`openssl rand -hex 32`). Changing it logs everyone out of the hub |
-| `TG_CLIENT_ID`, `TG_CLIENT_SECRET` | The bot's OpenID Connect client, from @BotFather |
+| `TG_CLIENT_ID`, `TG_CLIENT_SECRET` | The bot's OpenID Connect client, from @BotFather (Running Club's bot). Both or neither: without them Telegram login is off and passkeys still work |
 | `TG_BOT_TOKEN` | Optional: the bot messages the `notify` person about refused attempts (they press Start in the bot once) |
 | `TG_AUDIENCE` | Optional: Telegram's ID token `aud`, if it isn't `TG_CLIENT_ID` |
 | `HUB_ADMIN` | The person key that is admin (backups now, the admin UI later) |
 | `HUB_BACKUP_TOKEN` | 32+ characters, for `scripts/backup.sh` |
 | `HUB_SEED` | Only until the first start on a new database (`scripts/seed.sh`) |
 | `DATA_DIR` | `/data`: the volume, holding `hub.db` |
+| `RAILWAY_RUN_UID` | `0`: Railway mounts the volume as root, and the image's own user (65534) couldn't write to it |
 
 In @BotFather, the bot's allowed redirect URL is `https://login.almaz.dev/callback`.
 
@@ -84,7 +85,8 @@ In @BotFather, the bot's allowed redirect URL is `https://login.almaz.dev/callba
 
 SQLite (`modernc.org/sqlite`, no CGO) at `$DATA_DIR/hub.db`, with foreign keys and WAL. Numbered
 migrations run at start (`PRAGMA user_version`); a database from a newer hub, a failed migration
-or a failed `quick_check` serves nothing. So does a database without apps.
+or a failed `quick_check` serves nothing. So does a database without people (never seeded); apps
+can be added later in the admin UI.
 
 | Table | |
 | --- | --- |
@@ -140,6 +142,13 @@ scripts/seed.sh --delete
 ```
 
 Locally: `go run ./cmd/hub import -db data/hub.db private/seed.json`, then run with `DATA_DIR=data`.
+
+### The admin's first passkey
+
+While the `HUB_ADMIN` person has no passkey, every start writes a link to make one into the log:
+`admin: <key> has no passkey yet. Make one here (single use, 24 h): https://login.almaz.dev/enroll?t=…`.
+Only someone who can read the Railway log sees it. Open it on your phone or Mac and create the
+passkey; from then on, no more links.
 
 ### Backups
 

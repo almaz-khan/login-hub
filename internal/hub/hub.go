@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -63,6 +64,7 @@ type Server struct {
 	verifier    *oidc.IDTokenVerifier
 	keys        *keySet
 	wa          *webauthn.WebAuthn
+	telegram    bool // Telegram login configured
 	apiMux      http.Handler
 	ui          *adminUI
 	codes       codeStore
@@ -106,8 +108,8 @@ func New(cfg Config) *Server {
 		bad  bool
 		name string
 	}{
-		{cfg.ClientID == "", "TG_CLIENT_ID"},
-		{cfg.ClientSecret == "", "TG_CLIENT_SECRET"},
+		// Telegram is optional (passkeys work without it), but not half-configured
+		{(cfg.ClientID == "") != (cfg.ClientSecret == ""), "TG_CLIENT_ID and TG_CLIENT_SECRET (both, or neither for no Telegram login)"},
 		{len(cfg.SessionSecret) < 32, "SESSION_SECRET (32+ characters)"},
 		{!publicURL.MatchString(a.issuer) || store.CheckAppURL(a.issuer) != nil, "PUBLIC_URL (https://host)"},
 		{keyErr != nil, fmt.Sprintf("HUB_SIGNING_KEY (%v)", keyErr)},
@@ -141,6 +143,10 @@ func New(cfg Config) *Server {
 	if cfg.Admin == "" {
 		a.log.Printf("no HUB_ADMIN: nobody is admin")
 	}
+	a.telegram = cfg.ClientID != ""
+	if !a.telegram {
+		a.log.Printf("no TG_CLIENT_ID: Telegram login is off, passkeys only")
+	}
 	if a.wa, err = newWebAuthn(a.issuer); err != nil {
 		a.missing = append(a.missing, fmt.Sprintf("WebAuthn (%v)", err))
 		a.log.Printf("hub not configured, serving nothing: %s", strings.Join(a.missing, "; "))
@@ -149,6 +155,7 @@ func New(cfg Config) *Server {
 	a.discovery = a.discoveryDoc()
 	a.apiMux = a.apiRoutes()
 	a.ui = loadAdminUI()
+	a.adminLink()
 	remote := oidc.NewRemoteKeySet(oidc.ClientContext(context.Background(), a.client), a.tg+"/.well-known/jwks.json")
 	a.verifier = oidc.NewVerifier(a.tg, remote, &oidc.Config{
 		ClientID: or(cfg.Audience, cfg.ClientID),
@@ -313,12 +320,43 @@ func (a *Server) seed() error {
 	case len(a.cfg.Seed) > 0:
 		a.log.Printf("HUB_SEED ignored: the database already has people. Delete the variable")
 	}
-	apps, err := a.store.Count("apps")
-	if err != nil {
+	// nobody to let in: a database that was never seeded. Apps can come later, from the admin UI.
+	if people, err = a.store.Count("people"); err != nil {
 		return fmt.Errorf("database: %v", err)
 	}
-	if apps == 0 {
-		return errors.New("no apps in the database (set HUB_SEED for a new one)")
+	if people == 0 {
+		return errors.New("no people in the database (set HUB_SEED for a new one)")
 	}
 	return nil
+}
+
+// adminLink: while the admin has no passkey, each start logs a link to make one. That is the way
+// in for a hub without Telegram, and only someone who can read the hub's log sees it.
+func (a *Server) adminLink() {
+	if a.cfg.Admin == "" {
+		return
+	}
+	p, err := a.store.Person(a.cfg.Admin)
+	switch {
+	case err != nil:
+		a.log.Printf("admin: %v", err)
+		return
+	case p == nil:
+		a.log.Printf("admin: HUB_ADMIN %q is not in the database", a.cfg.Admin)
+		return
+	}
+	if has, err := a.store.HasPasskeys(p.Key); err != nil || has {
+		return
+	}
+	token, err := a.store.CreateEnrollment(p.Key, "startup", enrollTTL)
+	if err != nil {
+		a.log.Printf("admin: %v", err)
+		return
+	}
+	a.log.Printf("admin: %s has no passkey yet. Make one here (single use, 24 h): %s/enroll?t=%s", p.Key, a.issuer, token)
+}
+
+// methods: the login methods of app c this hub can offer now (Telegram only when configured)
+func (a *Server) methods(c *store.App) []string {
+	return slices.DeleteFunc(c.Methods(), func(m string) bool { return m == "telegram" && !a.telegram })
 }

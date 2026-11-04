@@ -19,6 +19,10 @@ import (
 func (a *Server) telegramRedirect() string { return a.issuer + "/callback" }
 
 func (a *Server) login(w http.ResponseWriter, r *http.Request) {
+	if !a.telegram {
+		page(w, http.StatusServiceUnavailable, pageTelegramOff(nil))
+		return
+	}
 	o := oauthData{State: random(), Verifier: random(), Nonce: random(), Next: safeNext(r.URL.Query().Get("next"))}
 	a.setCookie(w, a.oauthName(o.State), a.sign("oauth", o, oauthTTL), int(oauthTTL.Seconds()))
 	sum := sha256.Sum256([]byte(o.Verifier))

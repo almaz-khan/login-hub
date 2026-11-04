@@ -930,16 +930,16 @@ func TestHTTPSCookies(t *testing.T) {
 
 func TestFailsClosed(t *testing.T) {
 	for name, mod := range map[string]func(*Config){
-		"no telegram":  func(c *Config) { c.ClientID = "" },
-		"short secret": func(c *Config) { c.SessionSecret = "short" },
-		"no key":       func(c *Config) { c.SigningKey = "" },
-		"bad key":      func(c *Config) { c.SigningKey = "bm90IGEga2V5" },
-		"same old key": func(c *Config) { c.SigningKeyOld = c.SigningKey },
-		"http issuer":  func(c *Config) { c.PublicURL = "http://login.example" },
-		"issuer path":  func(c *Config) { c.PublicURL = "https://login.example/x" },
-		"no database":  func(c *Config) { c.Store, c.StoreErr = nil, fmt.Errorf("bad") },
-		"bad seed":     func(c *Config) { c.Store, c.Seed = emptyStore(t), []byte(`{"people":{}}`) },
-		"no apps":      func(c *Config) { c.Store = emptyStore(t) },
+		"half telegram": func(c *Config) { c.ClientID = "" },
+		"short secret":  func(c *Config) { c.SessionSecret = "short" },
+		"no key":        func(c *Config) { c.SigningKey = "" },
+		"bad key":       func(c *Config) { c.SigningKey = "bm90IGEga2V5" },
+		"same old key":  func(c *Config) { c.SigningKeyOld = c.SigningKey },
+		"http issuer":   func(c *Config) { c.PublicURL = "http://login.example" },
+		"issuer path":   func(c *Config) { c.PublicURL = "https://login.example/x" },
+		"no database":   func(c *Config) { c.Store, c.StoreErr = nil, fmt.Errorf("bad") },
+		"bad seed":      func(c *Config) { c.Store, c.Seed = emptyStore(t), []byte(`{"people":{}}`) },
+		"no people":     func(c *Config) { c.Store = emptyStore(t) },
 	} {
 		cfg := Config{SessionSecret: strings.Repeat("s", 32), ClientID: "1", ClientSecret: "2", PublicURL: "https://login.example", SigningKey: keyA, Store: testStore(t, seedJSON()), Log: log.New(io.Discard, "", 0)}
 		mod(&cfg)

@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -239,7 +240,12 @@ func (a *Server) authorize(w http.ResponseWriter, r *http.Request) {
 			fail("login_required", "no hub login this app accepts")
 			return
 		}
-		if id.person != nil && !c.Telegram {
+		methods := a.methods(c)
+		if len(methods) == 0 {
+			page(w, http.StatusServiceUnavailable, pageTelegramOff(c))
+			return
+		}
+		if id.person != nil && !slices.Contains(methods, "telegram") {
 			has, err := a.store.HasPasskeys(id.person.Key)
 			if err != nil {
 				a.broken(w, err)
@@ -250,11 +256,11 @@ func (a *Server) authorize(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if !id.proven() && len(c.Methods()) == 1 {
-			redirect(w, "/login/"+c.Methods()[0]+"?next="+url.QueryEscape(next))
+		if !id.proven() && len(methods) == 1 {
+			redirect(w, "/login/"+methods[0]+"?next="+url.QueryEscape(next))
 			return
 		}
-		page(w, http.StatusOK, pageChooser(c, id, next))
+		page(w, http.StatusOK, pageChooser(c, id, next, methods))
 		return
 	}
 	// who they are and what they may open are read from the database on every /authorize,
@@ -273,7 +279,7 @@ func (a *Server) authorize(w http.ResponseWriter, r *http.Request) {
 			fail("access_denied", "not allowed for this app")
 			return
 		}
-		page(w, http.StatusForbidden, pageDenied(c, id, next))
+		page(w, http.StatusForbidden, pageDenied(c, id, next, a.methods(c)))
 		return
 	}
 	code := random()
