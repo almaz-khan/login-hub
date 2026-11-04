@@ -6,3 +6,5 @@
 *.db
 *.db-wal
 *.db-shm
+/admin/build/*
+!/admin/build/.gitkeep

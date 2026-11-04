@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -34,13 +34,13 @@ func (e *env) register(b *browser, soft *softAuthenticator, token, label string)
 
 var linkRe = regexp.MustCompile(`/enroll\?t=([\w-]+)`)
 
-// adminLink: the admin (Alice, logged in with Telegram in b) makes a passkey link for person
+// adminLink: the admin (logged in in b) makes a passkey link for person through the API
 func (e *env) adminLink(b *browser, person string) string {
 	e.t.Helper()
-	resp := b.post(e.url+"/admin/enroll", url.Values{"person": {person}}, "Sec-Fetch-Site", "same-origin")
-	m := linkRe.FindStringSubmatch(body(resp))
-	if resp.StatusCode != http.StatusOK || m == nil {
-		e.t.Fatalf("admin link: %d", resp.StatusCode)
+	status, out := e.call(b, http.MethodPost, "/admin/api/people/"+person+"/enroll", nil)
+	m := linkRe.FindStringSubmatch(fmt.Sprint(out["link"]))
+	if status != http.StatusOK || m == nil {
+		e.t.Fatalf("admin link: %d %v", status, out)
 	}
 	return m[1]
 }
@@ -56,9 +56,6 @@ func TestEnrollByLink(t *testing.T) {
 	e := setup(t)
 	admin := e.browser()
 	e.rp("running-club").login(admin) // Alice, the admin
-	if page := body(admin.get(e.url + "/admin")); !strings.Contains(page, "Боб") || !strings.Contains(page, "Ссылка для passkey") {
-		t.Fatal(page)
-	}
 	token := e.adminLink(admin, "Bob")
 
 	// Bob, on his own phone, not logged in anywhere
@@ -172,53 +169,5 @@ func TestEnrollRefusals(t *testing.T) {
 	}
 	if resp := e.register(b, newSoftAuthenticator(e.url, "localhost"), "not-a-token", "x"); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("made-up token: %d", resp.StatusCode)
-	}
-}
-
-func TestAdminPage(t *testing.T) {
-	e := setup(t)
-	if resp := e.browser().get(e.url + "/admin"); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("anonymous: %d", resp.StatusCode)
-	}
-	e.tg.as(bob, "Bob", "bob")
-	bob := e.browser()
-	e.rp("stub").login(bob)
-	if resp := bob.get(e.url + "/admin"); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("not admin: %d", resp.StatusCode)
-	}
-	if resp := bob.post(e.url+"/admin/enroll", url.Values{"person": {"Bob"}}, "Sec-Fetch-Site", "same-origin"); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("not admin, link: %d", resp.StatusCode)
-	}
-
-	e.tg.as(alice, "Alice", "alice")
-	admin := e.browser()
-	e.rp("running-club").login(admin)
-	if resp := admin.post(e.url+"/admin/enroll", url.Values{"person": {"Bob"}}, "Sec-Fetch-Site", "same-site"); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("same-site post: %d", resp.StatusCode)
-	}
-	if resp := admin.post(e.url+"/admin/enroll", url.Values{"person": {"Nobody"}}, "Sec-Fetch-Site", "same-origin"); resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("unknown person: %d", resp.StatusCode)
-	}
-
-	// deleting a passkey
-	soft := e.enroll("Bob")
-	nextOf(t, e.passkey(bob, soft, "/"))
-	var id []byte
-	_ = e.cfg.Store.db.QueryRow(`SELECT id FROM passkeys WHERE person = 'Bob'`).Scan(&id)
-	admin.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp := admin.post(e.url+"/admin/passkeys/delete", url.Values{"id": {b64.EncodeToString(id)}}, "Sec-Fetch-Site", "same-origin")
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/admin" {
-		t.Fatalf("delete: %d", resp.StatusCode)
-	}
-	if has, _ := e.cfg.Store.HasPasskeys("Bob"); has {
-		t.Fatal("still there")
-	}
-	if resp := e.passkey(e.browser(), soft, "/"); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("deleted passkey still logs in: %d", resp.StatusCode)
-	}
-	var actions string
-	_ = e.cfg.Store.db.QueryRow(`SELECT group_concat(action || ' by ' || actor, ', ') FROM audit WHERE action LIKE 'passkey%'`).Scan(&actions)
-	if actions != "passkey add by test, passkey delete by Alice" {
-		t.Fatal(actions)
 	}
 }

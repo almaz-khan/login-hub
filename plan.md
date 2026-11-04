@@ -209,8 +209,9 @@ logins and re-checks fail, on the app's «не получилось войти»
 
 ## Work plan
 
-Each phase is one commit with tests (`go test -race`, `golangci-lint` clean). Nothing is pushed or
-deployed without a go-ahead.
+Each phase is one commit with tests (`go test -race`, `golangci-lint` clean), pushed to
+`github.com/almaz-khan/login-hub` (public: no personal data in git). Nothing is deployed without a
+go-ahead. Everything that touches real apps, Telegram or Railway comes last.
 
 1. ✅ **Hub skeleton + OIDC provider:** Telegram login, session, pages, notifications, headers,
    discovery, JWKS, `/authorize`, `/token`, codes, logout. Tested with go-oidc as the client.
@@ -223,14 +224,16 @@ deployed without a go-ahead.
    no user verification, unknown or removed credential, a passkey-only app refusing a Telegram
    session, step-up refusing a different person.
 5. ✅ **Enrollment:** admin links, the enrollment page, adding a device, the bot message, removing a passkey.
-6. **Running Club as the first client** (its own repo, a branch), then end-to-end in headless
-   Chrome with a virtual authenticator: Telegram-only, passkey-only and both, step-up, a denied
-   app, logout everywhere, the 24 h re-check.
-7. **Deploy:** the volume (and the volume's user: the image runs as 65534, Railway mounts volumes
-   as root), variables, the bot in @BotFather, `HUB_SEED`, deploy, checks from outside, Running
-   Club pointing at the hub with its old variables kept until a few days of good logins. An
-   external uptime check on `/healthz`.
-8. **Admin UI:** SvelteKit + Go API as above.
+6. **Admin UI:** SvelteKit + Go API as above. Replaces the interim `/admin` page.
+7. **End-to-end in headless Chrome**, against the hub alone: a stub OIDC app, the fake Telegram and
+   Chrome's virtual authenticator. Telegram-only, passkey-only and both, step-up, a denied app,
+   enrollment by link, logout everywhere, the admin UI's main paths, and no CSP violations.
+8. **Integration, last:** the real world.
+   1. Running Club as the first client (its own repo, a branch): the changes above, with tests.
+   2. Deploy: the volume (the image runs as 65534, Railway mounts volumes as root), variables, the
+      bot in @BotFather, `HUB_SEED`, deploy, checks from outside, an external uptime check on
+      `/healthz`.
+   3. Running Club pointing at the hub, with its old variables kept until a few days of good logins.
 
 ## Adding an app
 

@@ -61,6 +61,8 @@ type app struct {
 	verifier    *oidc.IDTokenVerifier
 	keys        *keySet
 	wa          *webauthn.WebAuthn
+	apiMux      http.Handler
+	ui          *adminUI
 	codes       codeStore
 	discovery   []byte
 	log         *log.Logger
@@ -143,6 +145,8 @@ func newApp(cfg Config) *app {
 		return a
 	}
 	a.discovery = a.discoveryDoc()
+	a.apiMux = a.apiRoutes()
+	a.ui = loadAdminUI()
 	remote := oidc.NewRemoteKeySet(oidc.ClientContext(context.Background(), a.client), a.tg+"/.well-known/jwks.json")
 	a.verifier = oidc.NewVerifier(a.tg, remote, &oidc.Config{
 		ClientID: or(cfg.Audience, cfg.ClientID),
@@ -183,12 +187,6 @@ func (a *app) route(path, method string) (http.HandlerFunc, string) {
 		methods = m{"GET": a.logoutPage, "POST": a.logout}
 	case "/admin/backup":
 		methods = m{"GET": a.backup}
-	case "/admin":
-		methods = m{"GET": a.adminPage}
-	case "/admin/enroll":
-		methods = m{"POST": a.adminEnroll}
-	case "/admin/passkeys/delete":
-		methods = m{"POST": a.adminDeletePasskey}
 	case "/enroll":
 		methods = m{"GET": a.enrollPage}
 	case "/enroll/options":
@@ -196,6 +194,10 @@ func (a *app) route(path, method string) (http.HandlerFunc, string) {
 	case "/enroll/verify":
 		methods = m{"POST": a.enrollVerify}
 	default:
+		if path == "/admin" || strings.HasPrefix(path, "/admin/") {
+			methods = m{"GET": a.adminUI, "HEAD": a.adminUI}
+			break
+		}
 		return nil, ""
 	}
 	allow := make([]string, 0, len(methods))
@@ -234,6 +236,10 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		text(w, http.StatusOK, "ok\n")
+		return
+	}
+	if strings.HasPrefix(p, "/admin/api/") && len(a.missing) == 0 {
+		a.apiMux.ServeHTTP(w, r)
 		return
 	}
 	handler, allow := a.route(p, r.Method)

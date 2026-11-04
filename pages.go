@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 const css = `:root{color-scheme:dark}
@@ -186,7 +185,7 @@ func homeLinks(id identity, admin bool) string {
 		s += `<a class="btn alt" href="/enroll">Добавить passkey на этом устройстве</a>`
 	}
 	if admin {
-		s += `<a class="btn alt" href="/admin">Люди и passkeys</a>`
+		s += `<a class="btn alt" href="/admin">Админка</a>`
 	}
 	return s
 }
@@ -222,7 +221,10 @@ var (
 <p>Добавить passkey можно по ссылке от админа или войдя на любой сайт, куда у тебя есть доступ.</p>`)
 
 	pageAdminOnly = layout("Только для админа", `<h1>Только для админа</h1>
-<p>Эта страница для того, кто раздаёт доступ. Войди его аккаунтом.</p>`)
+<p>Эта страница для того, кто раздаёт доступ. Войди его аккаунтом на любой сайт, потом вернись сюда.</p>`)
+
+	pageUINotBuilt = layout("Админка не собрана", `<h1>Админка не собрана</h1>
+<p>В этой сборке хаба нет админки: <code>cd admin &amp;&amp; npm ci &amp;&amp; npm run build</code>, потом собери хаб заново.</p>`)
 )
 
 func pageEnroll(p *Person, token string) string {
@@ -235,40 +237,6 @@ func pageEnroll(p *Person, token string) string {
 </div>
 <div id="done" hidden><p>Готово: passkey сохранён, и ты уже вошёл с ним на этом устройстве.</p><a class="btn alt" href="/">На главную</a></div>
 <script>`+passkeyJS+`</script>`)
-}
-
-func pageEnrollLink(p *Person, link string) string {
-	return layout("Ссылка для passkey", `<h1>Ссылка для `+e(p.Name)+`</h1>
-<p>Работает один раз и 24 часа. Отправь её `+e(p.Name)+`: открыв её, можно создать passkey на своём устройстве.</p>
-<code>`+e(link)+`</code>
-<a class="btn alt" href="/admin">Назад</a>`)
-}
-
-func ago(at int64) string {
-	if at == 0 {
-		return "—"
-	}
-	return time.Unix(at, 0).UTC().Format("2006-01-02")
-}
-
-func pageAdmin(people []personRow) string {
-	var b strings.Builder
-	b.WriteString(`<div class="scroll"><table><tr><th>Человек</th><th>Telegram</th><th>Был</th><th>Passkeys</th><th></th></tr>`)
-	for _, p := range people {
-		fmt.Fprintf(&b, `<tr><td><b>%s</b><br>%s</td><td>%s</td><td>%s</td><td>`, e(p.Name), e(p.Key), e(or(p.TelegramID, "—")), ago(p.LastSeen))
-		if len(p.Passkeys) == 0 {
-			b.WriteString(`—`)
-		}
-		for _, k := range p.Passkeys {
-			fmt.Fprintf(&b, `<form method="post" action="/admin/passkeys/delete" class="row"><span>%s, с %s, вход %s</span><input type="hidden" name="id" value="%s"><button class="btn alt mini" type="submit">Удалить</button></form>`,
-				e(k.Label), ago(k.Created), ago(k.LastUsed), e(b64.EncodeToString(k.ID)))
-		}
-		fmt.Fprintf(&b, `</td><td><form method="post" action="/admin/enroll"><input type="hidden" name="person" value="%s"><button class="btn mini" type="submit">Ссылка для passkey</button></form></td></tr>`, e(p.Key))
-	}
-	b.WriteString(`</table></div>`)
-	return layoutClass(` class="wide"`, "Люди и passkeys", `<h1>Люди и passkeys</h1>
-<p class="note">Пока здесь только passkeys; людей, группы и сайты меняет админка (последний этап).</p>
-`+b.String()+`<a class="btn alt" href="/admin/backup">Скачать копию базы</a>`)
 }
 
 // pageNoPasskey: a passkey-only app, for someone the hub knows but who has no passkey yet

@@ -55,7 +55,7 @@ var secrets = map[string]string{
 }
 
 func appURL(client string) string {
-	port := map[string]string{"running-club": "1", "stub": "2", "plus": "3", "both": "4", "pk": "5"}[client]
+	port := map[string]string{"running-club": "1", "stub": "2", "plus": "3", "both": "4", "pk": "5", "new-app": "7"}[client]
 	return "http://[::1]:" + port
 }
 
