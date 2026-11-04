@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 const css = `:root{color-scheme:dark}
@@ -27,7 +28,20 @@ form{margin:0}
 .btn:focus-visible{outline:3px solid #f5f1fb;outline-offset:3px}
 .note{font-size:13px;color:#a59eb2}
 .btn:disabled{opacity:.6;cursor:progress}
-.note:empty{display:none}`
+.note:empty{display:none}
+[hidden]{display:none!important}
+label{display:grid;gap:6px;font-size:14px;color:#d9d3e3}
+input{font:inherit;padding:12px 14px;border-radius:12px;border:1px solid #4a4352;background:#141118;color:#f5f1fb}
+input:focus-visible{outline:3px solid #f5f1fb;outline-offset:2px}
+main.wide{max-width:760px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:10px 8px;border-top:1px solid #322c39}
+th{font-weight:600;color:#a59eb2}
+.mini{display:inline-block;width:auto;margin:0;padding:6px 12px;font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+code{font:13px/1.4 ui-monospace,Menlo,monospace;word-break:break-all;background:#141118;padding:10px 12px;border-radius:10px;display:block;user-select:all}
+.scroll{overflow-x:auto}
+.stack{display:grid;gap:12px}`
 
 var cssHash = hash(css)
 
@@ -45,18 +59,22 @@ func csp(formAction string) string {
 
 func page(w http.ResponseWriter, status int, body string) { pageCSP(w, status, body, "") }
 
-// passkeyJS: the only script the hub serves, inline and allowed by its hash. It asks the browser
-// for a passkey and posts the answer back; base64url ↔ bytes by hand, since the JSON helpers
-// (parseRequestOptionsFromJSON, toJSON) aren't in every browser yet.
+// passkeyJS: the only script the hub serves, inline and allowed by its hash: the login (#pk) and
+// adding a passkey (#enroll). It asks the browser and posts the answer back; base64url ↔ bytes by
+// hand, since the JSON helpers (parseRequestOptionsFromJSON, toJSON) aren't in every browser yet.
 const passkeyJS = `const d=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0)).buffer;
 const u=a=>btoa(String.fromCharCode(...new Uint8Array(a))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-const btn=document.getElementById('pk'),msg=document.getElementById('msg');
-const post=async(path,body)=>{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Не получилось войти');return j};
-btn.addEventListener('click',async()=>{btn.disabled=true;msg.textContent='';try{
-const o=await post('/login/passkey/options',{});const p=o.options.publicKey;p.challenge=d(p.challenge);
+const $=id=>document.getElementById(id),msg=$('msg');
+const post=async(path,body)=>{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Не получилось');return j};
+const run=(btn,fn)=>btn&&btn.addEventListener('click',async()=>{btn.disabled=true;msg.textContent='';try{await fn()}catch(e){msg.textContent=e.name==='NotAllowedError'?'Отменено. Попробуй ещё раз.':e.name==='InvalidStateError'?'Этот passkey уже добавлен.':e.message;btn.disabled=false}});
+run($('pk'),async()=>{const o=await post('/login/passkey/options',{});const p=o.options.publicKey;p.challenge=d(p.challenge);
 const c=await navigator.credentials.get({publicKey:p});const r=c.response;
-const j=await post('/login/passkey/verify',{challenge:o.challenge,next:btn.dataset.next,credential:{id:c.id,rawId:u(c.rawId),type:c.type,response:{clientDataJSON:u(r.clientDataJSON),authenticatorData:u(r.authenticatorData),signature:u(r.signature),userHandle:r.userHandle?u(r.userHandle):null},clientExtensionResults:c.getClientExtensionResults()}});
-location.assign(j.next)}catch(e){msg.textContent=e.name==='NotAllowedError'?'Вход отменён. Попробуй ещё раз.':e.message;btn.disabled=false}});`
+const j=await post('/login/passkey/verify',{challenge:o.challenge,next:$('pk').dataset.next,credential:{id:c.id,rawId:u(c.rawId),type:c.type,response:{clientDataJSON:u(r.clientDataJSON),authenticatorData:u(r.authenticatorData),signature:u(r.signature),userHandle:r.userHandle?u(r.userHandle):null},clientExtensionResults:c.getClientExtensionResults()}});
+location.assign(j.next)});
+run($('enroll'),async()=>{const o=await post('/enroll/options',{token:$('enroll').dataset.token});const p=o.options.publicKey;p.challenge=d(p.challenge);p.user.id=d(p.user.id);(p.excludeCredentials||[]).forEach(c=>c.id=d(c.id));
+const c=await navigator.credentials.create({publicKey:p});const r=c.response;
+await post('/enroll/verify',{challenge:o.challenge,label:$('label').value,credential:{id:c.id,rawId:u(c.rawId),type:c.type,response:{clientDataJSON:u(r.clientDataJSON),attestationObject:u(r.attestationObject),transports:r.getTransports?r.getTransports():[]},clientExtensionResults:c.getClientExtensionResults()}});
+$('form').hidden=true;$('done').hidden=false});`
 
 var passkeyCSP = fmt.Sprintf("default-src 'none'; style-src '%s'; script-src '%s'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'", cssHash, hash(passkeyJS))
 
@@ -76,7 +94,9 @@ func pageCSP(w http.ResponseWriter, status int, body, formAction string) {
 	_, _ = fmt.Fprint(w, body)
 }
 
-func layout(title, body string) string {
+func layout(title, body string) string { return layoutClass("", title, body) }
+
+func layoutClass(class, title, body string) string {
 	return `<!doctype html>
 <html lang="ru">
 <head>
@@ -88,7 +108,7 @@ func layout(title, body string) string {
 <style>` + css + `</style>
 </head>
 <body>
-<main>
+<main` + class + `>
 <div class="kick">Один вход</div>
 ` + body + `
 </main>
@@ -149,7 +169,7 @@ var (
 <p>Сайт, с которого ты пришёл, прислал ссылку, которой здесь не знают. Вернись на сайт и попробуй ещё раз. Если не выйдет, напиши тому, кто дал ссылку.</p>`)
 )
 
-func pageHome(id identity) string {
+func pageHome(id identity, admin bool) string {
 	if !id.proven() {
 		return layout("Вход", `<h1>Один вход на все сайты</h1>
 <p>Сайты отправляют сюда, чтобы узнать, кто ты. Войти нужно один раз, дальше сайты открываются сами.</p>
@@ -157,7 +177,18 @@ func pageHome(id identity) string {
 	}
 	return layout("Вход", `<h1>Ты вошёл</h1>
 <p>Как `+account(id)+`, через `+methodsText(id.methods())+`. Сайты, куда у тебя есть доступ, откроются сами.</p>
-<a class="btn alt" href="/logout">Выйти на всех сайтах</a>`)
+`+homeLinks(id, admin)+`<a class="btn alt" href="/logout">Выйти на всех сайтах</a>`)
+}
+
+func homeLinks(id identity, admin bool) string {
+	s := ""
+	if id.person != nil {
+		s += `<a class="btn alt" href="/enroll">Добавить passkey на этом устройстве</a>`
+	}
+	if admin {
+		s += `<a class="btn alt" href="/admin">Люди и passkeys</a>`
+	}
+	return s
 }
 
 // pageChooser: the app's login methods; for someone already logged in another way, a step-up
@@ -181,6 +212,63 @@ func pagePasskey(next string) string {
 <button class="btn" type="button" id="pk" data-next="`+e(next)+`">Войти с passkey</button>
 <p class="note" id="msg" role="status" aria-live="polite"></p>
 <script>`+passkeyJS+`</script>`)
+}
+
+var (
+	pageLinkUsed = layout("Ссылка не работает", `<h1>Ссылка не работает</h1>
+<p>Ссылка для passkey работает один раз и 24 часа. Эта уже использована или устарела: попроси новую.</p>`)
+
+	pageLoginFirst = layout("Сначала войди", `<h1>Сначала войди</h1>
+<p>Добавить passkey можно по ссылке от админа или войдя на любой сайт, куда у тебя есть доступ.</p>`)
+
+	pageAdminOnly = layout("Только для админа", `<h1>Только для админа</h1>
+<p>Эта страница для того, кто раздаёт доступ. Войди его аккаунтом.</p>`)
+)
+
+func pageEnroll(p *Person, token string) string {
+	return layout("Новый passkey", `<h1>Новый passkey</h1>
+<div id="form" class="stack">
+<p>Для <b>`+e(p.Name)+`</b>. Телефон или компьютер попросит Face ID, отпечаток или код устройства, и дальше вход на сайты будет таким же.</p>
+<label>Как назвать это устройство<input id="label" maxlength="60" placeholder="Например, iPhone" autocomplete="off"></label>
+<button class="btn" type="button" id="enroll" data-token="`+e(token)+`">Создать passkey</button>
+<p class="note" id="msg" role="status" aria-live="polite"></p>
+</div>
+<div id="done" hidden><p>Готово: passkey сохранён, и ты уже вошёл с ним на этом устройстве.</p><a class="btn alt" href="/">На главную</a></div>
+<script>`+passkeyJS+`</script>`)
+}
+
+func pageEnrollLink(p *Person, link string) string {
+	return layout("Ссылка для passkey", `<h1>Ссылка для `+e(p.Name)+`</h1>
+<p>Работает один раз и 24 часа. Отправь её `+e(p.Name)+`: открыв её, можно создать passkey на своём устройстве.</p>
+<code>`+e(link)+`</code>
+<a class="btn alt" href="/admin">Назад</a>`)
+}
+
+func ago(at int64) string {
+	if at == 0 {
+		return "—"
+	}
+	return time.Unix(at, 0).UTC().Format("2006-01-02")
+}
+
+func pageAdmin(people []personRow) string {
+	var b strings.Builder
+	b.WriteString(`<div class="scroll"><table><tr><th>Человек</th><th>Telegram</th><th>Был</th><th>Passkeys</th><th></th></tr>`)
+	for _, p := range people {
+		fmt.Fprintf(&b, `<tr><td><b>%s</b><br>%s</td><td>%s</td><td>%s</td><td>`, e(p.Name), e(p.Key), e(or(p.TelegramID, "—")), ago(p.LastSeen))
+		if len(p.Passkeys) == 0 {
+			b.WriteString(`—`)
+		}
+		for _, k := range p.Passkeys {
+			fmt.Fprintf(&b, `<form method="post" action="/admin/passkeys/delete" class="row"><span>%s, с %s, вход %s</span><input type="hidden" name="id" value="%s"><button class="btn alt mini" type="submit">Удалить</button></form>`,
+				e(k.Label), ago(k.Created), ago(k.LastUsed), e(b64.EncodeToString(k.ID)))
+		}
+		fmt.Fprintf(&b, `</td><td><form method="post" action="/admin/enroll"><input type="hidden" name="person" value="%s"><button class="btn mini" type="submit">Ссылка для passkey</button></form></td></tr>`, e(p.Key))
+	}
+	b.WriteString(`</table></div>`)
+	return layoutClass(` class="wide"`, "Люди и passkeys", `<h1>Люди и passkeys</h1>
+<p class="note">Пока здесь только passkeys; людей, группы и сайты меняет админка (последний этап).</p>
+`+b.String()+`<a class="btn alt" href="/admin/backup">Скачать копию базы</a>`)
 }
 
 // pageNoPasskey: a passkey-only app, for someone the hub knows but who has no passkey yet

@@ -94,6 +94,16 @@ var migrations = []string{
 		person     TEXT,
 		expires_at INTEGER NOT NULL
 	) STRICT;`,
+
+	// 3: passkey enrollment links (only their hash is kept)
+	`CREATE TABLE enrollments (
+		token_hash BLOB PRIMARY KEY,
+		person     TEXT NOT NULL REFERENCES people(key) ON DELETE CASCADE ON UPDATE CASCADE,
+		created_by TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		expires_at INTEGER NOT NULL,
+		used_at    INTEGER
+	) STRICT;`,
 }
 
 type Store struct {

@@ -60,10 +60,27 @@ func (a *app) notifyDenied(id identity, c *client) {
 		text += "\nВ хабе такого человека нет"
 	}
 
+	a.sendLater(to.TelegramID, text)
+}
+
+// tell: a message to the notify person, if there is one with a Telegram id and a bot token.
+// text is HTML: escape anything that comes from outside.
+func (a *app) tell(text string) {
+	if a.cfg.BotToken == "" {
+		return
+	}
+	to, err := a.store.Notify()
+	if err != nil || to == nil || to.TelegramID == "" {
+		return
+	}
+	a.sendLater(to.TelegramID, html.EscapeString(text))
+}
+
+func (a *app) sendLater(chat, text string) {
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		a.send(to.TelegramID, text)
+		a.send(chat, text)
 	}()
 }
 

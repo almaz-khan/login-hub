@@ -6,6 +6,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -126,4 +127,115 @@ func (s *Store) WebAuthnHandle(person string) ([]byte, error) {
 		return err
 	})
 	return h, err
+}
+
+var errLinkUsed = errors.New("enrollment link used or expired")
+
+func tokenHash(token string) []byte {
+	sum := sha256.Sum256([]byte(token))
+	return sum[:]
+}
+
+// CreateEnrollment: a single-use link token for person; only its hash is stored
+func (s *Store) CreateEnrollment(person, actor string, ttl time.Duration) (string, error) {
+	token := random()
+	err := s.tx(func(tx *sql.Tx) error {
+		now := s.now()
+		if _, err := tx.Exec(`DELETE FROM enrollments WHERE expires_at <= ? OR used_at IS NOT NULL`, now.Unix()); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO enrollments (token_hash, person, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`,
+			tokenHash(token), person, actor, now.Unix(), now.Add(ttl).Unix()); err != nil {
+			return err
+		}
+		return s.audit(tx, actor, "enrollment link", person)
+	})
+	return token, err
+}
+
+// Enrollment: whom an unused, unexpired link is for, or ""
+func (s *Store) Enrollment(token string) (string, error) {
+	var person string
+	err := s.db.QueryRow(`SELECT person FROM enrollments WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`,
+		tokenHash(token), s.now().Unix()).Scan(&person)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return person, err
+}
+
+// AddPasskeyWithLink: the passkey and the link (by its hash) spent together, or neither
+func (s *Store) AddPasskeyWithLink(linkHash []byte, person string, id, data []byte, label string) error {
+	return s.tx(func(tx *sql.Tx) error {
+		res, err := tx.Exec(`UPDATE enrollments SET used_at = ? WHERE token_hash = ? AND person = ? AND used_at IS NULL AND expires_at > ?`,
+			s.now().Unix(), linkHash, person, s.now().Unix())
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n != 1 {
+			return errLinkUsed
+		}
+		if _, err := tx.Exec(`INSERT INTO passkeys (id, person, data, label, created_at) VALUES (?, ?, ?, ?, ?)`,
+			id, person, data, label, s.now().Unix()); err != nil {
+			return err
+		}
+		return s.audit(tx, "link", "passkey add", person+": "+label)
+	})
+}
+
+func (s *Store) DeletePasskey(id []byte, actor string) (bool, error) {
+	var deleted bool
+	err := s.tx(func(tx *sql.Tx) error {
+		var person, label string
+		err := tx.QueryRow(`DELETE FROM passkeys WHERE id = ? RETURNING person, label`, id).Scan(&person, &label)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		deleted = true
+		return s.audit(tx, actor, "passkey delete", person+": "+label)
+	})
+	return deleted, err
+}
+
+type passkeyRow struct {
+	ID       []byte
+	Label    string
+	Created  int64
+	LastUsed int64
+}
+
+type personRow struct {
+	Person
+	LastSeen int64
+	Passkeys []passkeyRow
+}
+
+// People: everyone with their passkeys, for the admin page
+func (s *Store) People() ([]personRow, error) {
+	rows, err := s.db.Query(`SELECT p.key, p.name, coalesce(p.telegram_id, ''), coalesce(p.last_seen_at, 0),
+		k.id, coalesce(k.label, ''), coalesce(k.created_at, 0), coalesce(k.last_used_at, 0)
+		FROM people p LEFT JOIN passkeys k ON k.person = p.key ORDER BY p.key, k.created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []personRow
+	for rows.Next() {
+		var p personRow
+		var k passkeyRow
+		if err := rows.Scan(&p.Key, &p.Name, &p.TelegramID, &p.LastSeen, &k.ID, &k.Label, &k.Created, &k.LastUsed); err != nil {
+			return nil, err
+		}
+		if len(out) == 0 || out[len(out)-1].Key != p.Key {
+			out = append(out, p)
+		}
+		if k.ID != nil {
+			last := &out[len(out)-1]
+			last.Passkeys = append(last.Passkeys, k)
+		}
+	}
+	return out, rows.Err()
 }

@@ -183,6 +183,18 @@ func (a *app) route(path, method string) (http.HandlerFunc, string) {
 		methods = m{"GET": a.logoutPage, "POST": a.logout}
 	case "/admin/backup":
 		methods = m{"GET": a.backup}
+	case "/admin":
+		methods = m{"GET": a.adminPage}
+	case "/admin/enroll":
+		methods = m{"POST": a.adminEnroll}
+	case "/admin/passkeys/delete":
+		methods = m{"POST": a.adminDeletePasskey}
+	case "/enroll":
+		methods = m{"GET": a.enrollPage}
+	case "/enroll/options":
+		methods = m{"POST": a.enrollOptions}
+	case "/enroll/verify":
+		methods = m{"POST": a.enrollVerify}
 	default:
 		return nil, ""
 	}
@@ -246,7 +258,7 @@ func (a *app) home(w http.ResponseWriter, r *http.Request) {
 		a.broken(w, err)
 		return
 	}
-	page(w, http.StatusOK, pageHome(id))
+	page(w, http.StatusOK, pageHome(id, id.person != nil && id.person.Key == a.cfg.Admin && a.cfg.Admin != ""))
 }
 
 func (a *app) setCookie(w http.ResponseWriter, name, value string, maxAge int) {

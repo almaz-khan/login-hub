@@ -152,13 +152,14 @@ Rules that matter:
 
 ## Enrollment (phase 4)
 
-1. The admin makes a link for a person (CLI-less: from the hub's home page while logged in as
-   admin, later from the admin UI). Single use, 24 hours.
+1. The admin makes a link for a person on `/admin` (later the admin UI). Single use, 24 hours;
+   only the token's hash is stored, and the link and the new passkey are spent in one transaction.
 2. The person opens it and creates a passkey; it's saved at once. The bot tells the admin.
 3. Logged-in people can add another device's passkey themselves (proven with any method that's
    already theirs).
 
-Removing a passkey: the admin UI, or for now a `hub` admin page listing passkeys with «Удалить».
+Removing a passkey: for now `/admin`, a server-rendered page listing people and passkeys
+(«Ссылка для passkey», «Удалить»); later the admin UI.
 
 ## Admin UI (last phase)
 
@@ -221,7 +222,7 @@ deployed without a go-ahead.
 4. ✅ **Passkey login:** WebAuthn with a software authenticator in the tests: wrong origin or RP ID,
    no user verification, unknown or removed credential, a passkey-only app refusing a Telegram
    session, step-up refusing a different person.
-5. **Enrollment:** admin links, the enrollment page, adding a device, the bot message, removing a passkey.
+5. ✅ **Enrollment:** admin links, the enrollment page, adding a device, the bot message, removing a passkey.
 6. **Running Club as the first client** (its own repo, a branch), then end-to-end in headless
    Chrome with a virtual authenticator: Telegram-only, passkey-only and both, step-up, a denied
    app, logout everywhere, the 24 h re-check.

@@ -29,6 +29,8 @@ Railway volume. The seed for a new database is `private/seed.json` (gitignored).
 | `POST /login/passkey/options`, `POST /login/passkey/verify` | A single-use challenge (5 min), then the signed answer → a passkey proof. Same-origin JSON only |
 | `GET /logout` | «Выйти на всех сайтах?»; takes `client_id`, `post_logout_redirect_uri` (listed for that app) and `state` |
 | `POST /logout` | Same-origin only (not same-site: every `*.almaz.dev` app is same-site); ends the hub session |
+| `GET /enroll[?t=…]`, `POST /enroll/options`, `POST /enroll/verify` | Adding a passkey: with an admin's link (single use, 24 h) or while logged in. Same-origin JSON only |
+| `GET /admin`, `POST /admin/enroll`, `POST /admin/passkeys/delete` | People and their passkeys; make a passkey link; remove a passkey. Admin only, same-origin forms |
 | `GET /admin/backup` | A consistent copy of the database: the admin (`HUB_ADMIN`) logged in, or `Authorization: Bearer $HUB_BACKUP_TOKEN` |
 | `GET /healthz` | `200 ok`, or `503` when anything is missing or broken, so Railway never switches to a hub that would serve nothing |
 
@@ -52,8 +54,7 @@ valid 180 days), and `/authorize` lets someone through silently only with a proo
 go-webauthn with p2pvc's rules: discoverable credentials, user verification required, RP ID =
 the hub's host (one passkey works for every app). Who logs in is decided by the credential id and
 its signature; the user handle isn't signed and some password managers alter it, so it is only
-logged. A passkey removed from the database ends its proof in every session at once. Adding
-passkeys (enrollment links) is phase 5.
+logged. A passkey removed from the database ends its proof in every session at once.
 
 `prompt=none` is supported: `error=login_required` without a proof the app accepts, `error=access_denied`
 for someone not allowed.
@@ -89,6 +90,7 @@ or a failed `quick_check` serves nothing. So does a database without apps.
 | `people` | `key` (= `sub`), `name`, `telegram_id` (unique, optional), `last_seen_at`, `webauthn_handle` |
 | `passkeys` | Credential id, go-webauthn's credential JSON (public key, flags, counter), person, label, `last_used_at` |
 | `challenges` | WebAuthn challenges: single use, 5 minutes |
+| `enrollments` | Passkey links: only the token's hash, the person, who made it, expiry, when used |
 | `groups`, `group_members` | Groups of people; deleting a person or renaming a group cascades |
 | `apps`, `app_urls` | Client id, name, `secret_sha256`, login methods; exact redirect and logout URLs |
 | `app_access` | A person or a group per row, never both |
@@ -147,6 +149,17 @@ scripts/backup.sh          # ~/Backups/login-hub/hub-<time>.db, newest 30 kept
 Also turn on Railway's volume backups. Restoring: stop the service, put the file at
 `/data/hub.db` on the volume, start it. Without a backup, a lost volume means re-seeding and
 re-enrolling every passkey.
+
+### Give someone a passkey
+
+1. Log in to the hub as the admin, open `https://login.almaz.dev/admin`, press «Ссылка для
+   passkey» next to the person.
+2. Send them the link. It works once, for 24 hours; only its hash is stored.
+3. They open it on their device and create the passkey. It's saved at once, logs them in on that
+   device, and the bot tells the notify person.
+
+Someone already logged in (any method) adds another device from the hub's home page. To remove a
+lost device's passkey: «Удалить» on `/admin`.
 
 ### Add an app
 

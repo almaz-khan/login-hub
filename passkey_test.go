@@ -245,7 +245,7 @@ func TestProofsOfTwoPeopleDontMix(t *testing.T) {
 	soft := e.enroll("Alice")
 	e.tg.as(bob, "Bob", "bob")
 	b := e.browser()
-	e.rp("stub").login(b) // Bob, by Telegram
+	e.rp("stub").login(b)              // Bob, by Telegram
 	nextOf(t, e.passkey(b, soft, "/")) // then Alice's passkey on the same browser
 	if page := body(b.get(e.url + "/")); !strings.Contains(page, "<b>Алиса</b>, через passkey") {
 		t.Fatalf("home: %s", page)
