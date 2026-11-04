@@ -8,14 +8,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 project=3def631d-1da8-42b2-9608-ecb8bb4f4803 # Railway project "login-hub"
 service=${RAILWAY_SERVICE:-hub}
+environment=${RAILWAY_ENVIRONMENT:-production}
 file=${SEED_FILE:-private/seed.json}
 
 if [ "${1:-}" = --delete ]; then
-	railway variable delete HUB_SEED --project "$project" --service "$service" --skip-deploys
+	railway variable delete HUB_SEED --project "$project" --environment "$environment" --service "$service" --skip-deploys
 	exit
 fi
 go run ./cmd/hub check "$file"
 # compact JSON through stdin: the people never appear in a command line or the shell history
 node -e 'process.stdout.write(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))))' "$file" |
-	railway variable set HUB_SEED --stdin --project "$project" --service "$service" --skip-deploys >/dev/null
+	railway variable set HUB_SEED --stdin --project "$project" --environment "$environment" --service "$service" --skip-deploys >/dev/null
 echo "HUB_SEED set; it is imported at the next start into an empty database. Then: $0 --delete"
