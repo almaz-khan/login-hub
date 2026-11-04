@@ -222,6 +222,7 @@ re-checks fail on the app's «не получилось войти» page.
 | `internal/store/` | SQLite: migrations, the seed, people, apps, access, passkeys, links, the admin's changes and the audit log |
 | `internal/hub/` | HTTP: OIDC provider, Telegram and passkey logins, enrollment, logout, the admin API and UI serving, pages |
 | `admin/` | The admin UI (SvelteKit); `embed.go` puts its `build/` into the binary |
+| `e2e/` | Browser tests: `env/` runs the hub with a fake Telegram and four stub OIDC apps; `tests/` drives them in Chromium (Playwright) |
 | `scripts/` | Deploy, smoke test, seed, backup |
 
 ## Development
@@ -238,3 +239,26 @@ HUB_URL=http://localhost:8080 npm run dev   # proxies /admin/api to a local hub;
 ```
 
 A hub built without `admin/build` serves «Админка не собрана» at `/admin`; the image always builds it.
+
+### Browser tests
+
+```sh
+cd e2e
+npm ci && npx playwright install chromium   # once
+npx playwright test                         # starts go run ./e2e/env itself
+SCREENSHOTS=/tmp/shots npx playwright test  # also saves the admin UI's pages
+go run ./e2e/env                            # or just the environment, to click through by hand
+```
+
+`go run ./e2e/env` serves the hub at `http://localhost:4455` (seeded: Alice is admin, Bob, Carol
+without Telegram), a fake Telegram at `127.0.0.1:4454` whose login page lets you pick the account,
+and four stub apps: `127.0.0.1:4461` Telegram only, `:4462` passkey only, `:4463` either, `:4464`
+only Bob. The tests run in order against that one database, with Chromium's virtual authenticator
+for passkeys, and fail on any CSP violation or page error:
+
+- Telegram login; a second app without the Telegram screen; a denied app and the bot message;
+- a passkey-only app without a passkey; adding one; then that app opening silently;
+- logout everywhere; the chooser; passkey login; step-up to Telegram;
+- the admin UI: people, a passkey link, a new person, a refused edit, groups, apps, the audit log;
+- enrollment by link on another device, used once; Bob let in by a group change; an unknown
+  Telegram account refused.

@@ -2,8 +2,8 @@
 # Checks and uploads the hub to Railway from this Mac (there is no CI):
 #
 #   1. refuses unless the checkout is clean (and, once there is a remote, exactly origin/main);
-#   2. the admin UI's type check and build, go vet, golangci-lint, go test -race and a smoke test
-#      of the image (needs Docker running; the image builds the UI again, from scratch);
+#   2. the admin UI's type check and build, go vet, golangci-lint, go test -race, the browser tests
+#      (e2e/) and a smoke test of the image (needs Docker running; the image builds the UI again);
 #   3. uploads to the `hub` service; Railway switches over only once /healthz answers 200,
 #      so a hub that would serve nothing never replaces a working one.
 #
@@ -52,6 +52,7 @@ if $checks; then
 	go vet ./...
 	golangci-lint run ./...
 	go test -race -count=1 ./...
+	(cd e2e && npm ci --no-audit --no-fund && npx playwright test) # Chromium: npx playwright install chromium, once
 	scripts/smoke.sh
 fi
 

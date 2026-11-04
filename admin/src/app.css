@@ -116,6 +116,7 @@ textarea {
 }
 label {
 	display: grid;
+	align-content: start;
 	gap: 4px;
 	font-size: 13px;
 	color: var(--soft);
@@ -189,6 +190,7 @@ label.check input {
 }
 .banner {
 	padding: 10px 14px;
+	margin: 0;
 	border-radius: 12px;
 	background: #3a1d24;
 	color: var(--danger);

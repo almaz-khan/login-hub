@@ -227,7 +227,7 @@ go-ahead. Everything that touches real apps, Telegram or Railway comes last.
    session, step-up refusing a different person.
 5. ✅ **Enrollment:** admin links, the enrollment page, adding a device, the bot message, removing a passkey.
 6. ✅ **Admin UI:** SvelteKit + Go API as above. Replaces the interim `/admin` page.
-7. **End-to-end in headless Chrome**, against the hub alone: a stub OIDC app, the fake Telegram and
+7. ✅ **End-to-end in headless Chrome**, against the hub alone: a stub OIDC app, the fake Telegram and
    Chrome's virtual authenticator. Telegram-only, passkey-only and both, step-up, a denied app,
    enrollment by link, logout everywhere, the admin UI's main paths, and no CSP violations.
 8. **Integration, last:** the real world.

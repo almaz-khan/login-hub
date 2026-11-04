@@ -1,9 +1,11 @@
 package hub
 
 // The admin UI: a SvelteKit app (admin/, adapter-static, base /admin) built into admin/build and
-// embedded in the binary (package admin). Only the admin gets any of it, assets included. Its CSP header is made
-// here from the inline scripts SvelteKit writes into 200.html, so the page runs exactly those and
-// its own files: script-src 'self' plus their hashes, style-src 'self', connect-src 'self'.
+// embedded in the binary (package admin). Only the admin gets any of it, assets included. Its CSP
+// header is made here from the build itself: script-src 'self' plus the hashes of the inline
+// scripts SvelteKit writes into 200.html, and style-src 'self' plus 'unsafe-hashes' for exactly
+// the style attributes the bundle sets (SvelteKit's visually hidden route announcer; the UI's own
+// code sets none). connect-src 'self'; nothing else.
 
 import (
 	"io/fs"
@@ -22,7 +24,10 @@ type adminUI struct {
 	csp   string
 }
 
-var inlineScript = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
+var (
+	inlineScript = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
+	styleAttr    = regexp.MustCompile(`style="([^"]+)"`)
+)
 
 func loadAdminUI() *adminUI {
 	sub := admin.FS()
@@ -36,8 +41,26 @@ func loadAdminUI() *adminUI {
 	for _, m := range inlineScript.FindAllSubmatch(index, -1) {
 		scripts = append(scripts, "'"+hash(string(m[1]))+"'")
 	}
-	ui.csp = "default-src 'none'; script-src " + strings.Join(scripts, " ") +
-		"; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	styles := []string{"'self'"}
+	seen := map[string]bool{}
+	_ = fs.WalkDir(sub, "_app", func(name string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(name, ".js") {
+			return nil
+		}
+		js, _ := fs.ReadFile(sub, name)
+		for _, m := range styleAttr.FindAllSubmatch(js, -1) {
+			if h := "'" + hash(string(m[1])) + "'"; !seen[h] {
+				seen[h] = true
+				styles = append(styles, h)
+			}
+		}
+		return nil
+	})
+	if len(styles) > 1 {
+		styles = append(styles[:1], append([]string{"'unsafe-hashes'"}, styles[1:]...)...)
+	}
+	ui.csp = "default-src 'none'; script-src " + strings.Join(scripts, " ") + "; style-src " + strings.Join(styles, " ") +
+		"; connect-src 'self'; img-src 'self' data:; font-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 	return ui
 }
 

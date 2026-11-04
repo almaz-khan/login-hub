@@ -295,7 +295,8 @@ func TestAdminUIServing(t *testing.T) {
 		return
 	}
 	csp := resp.Header.Get("Content-Security-Policy")
-	if resp.StatusCode != http.StatusOK || !strings.Contains(csp, "script-src 'self' 'sha256-") || strings.Contains(csp, "unsafe") {
+	// scripts: only by hash; styles: 'unsafe-hashes' allows exactly the hashed style attributes, nothing inline
+	if resp.StatusCode != http.StatusOK || !strings.Contains(csp, "script-src 'self' 'sha256-") || strings.Contains(csp, "unsafe-inline") || strings.Contains(csp, "unsafe-eval") {
 		t.Fatalf("ui: %d %s", resp.StatusCode, csp)
 	}
 	// deep links get the app too, and assets are served

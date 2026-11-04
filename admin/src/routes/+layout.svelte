@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { hub, reload } from '#lib/hub.svelte.js';
@@ -15,6 +16,8 @@
 	];
 
 	onMount(reload);
+	// an error belongs to the page it happened on
+	afterNavigate(() => (hub.error = ''));
 </script>
 
 <header>
@@ -37,7 +40,10 @@
 
 <main>
 	{#if hub.error}
-		<p class="banner" role="alert">{hub.error}</p>
+		<div class="banner spread" role="alert">
+			<span>{hub.error}</span>
+			<button class="link" onclick={() => (hub.error = '')}>Закрыть</button>
+		</div>
 	{/if}
 	{#if hub.state}
 		{@render children()}

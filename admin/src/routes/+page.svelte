@@ -68,7 +68,7 @@
 						<label>Telegram id<input bind:value={draft.telegram_id} inputmode="numeric" placeholder="нет" /></label>
 						<div class="row">
 							<button disabled={hub.busy}>Сохранить</button>
-							<button type="button" class="ghost" onclick={() => (editing = null)}>Отмена</button>
+							<button type="button" class="ghost" onclick={() => ((editing = null), (hub.error = ''))}>Отмена</button>
 						</div>
 					</form>
 				{:else}
