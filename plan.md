@@ -165,13 +165,15 @@ Removing a passkey: for now `/admin`, a server-rendered page listing people and 
 
 - **SvelteKit** (`adapter-static`), built into the Go binary with `embed` and served at `/admin`,
   as in p2pvc. **Go** serves a JSON API at `/admin/api/…`.
-- Only for admins (`HUB_ADMIN`, later an admin flag on people), with a hub session. Every API
-  call needs a same-origin request (Sec-Fetch-Site / Origin) and a JSON content type; changes run
-  in one transaction, are validated like the seed, and are written to `audit`.
+- Only for the admin (`HUB_ADMIN`), with a hub session; assets too. Every API call needs a
+  same-origin request (Sec-Fetch-Site / Origin) and a JSON body for writes; changes run in one
+  transaction, are validated like the seed, and are written to `audit`. The admin can't delete
+  themselves or remove their own last way in.
 - Screens: people (Telegram id, passkeys, groups, apps they can open, last login), groups, apps
   (URLs, login methods, access; a new or rotated client secret is shown once), enrollment links,
   audit log, backup download.
-- Its own strict CSP (`script-src 'self'`), no third-party code at runtime.
+- Its own strict CSP, sent by the hub: `script-src 'self'` plus the hash of SvelteKit's inline
+  bootstrap, `style-src 'self'`, `connect-src 'self'`. No third-party code at runtime.
 
 ## Apps
 
@@ -224,7 +226,7 @@ go-ahead. Everything that touches real apps, Telegram or Railway comes last.
    no user verification, unknown or removed credential, a passkey-only app refusing a Telegram
    session, step-up refusing a different person.
 5. ✅ **Enrollment:** admin links, the enrollment page, adding a device, the bot message, removing a passkey.
-6. **Admin UI:** SvelteKit + Go API as above. Replaces the interim `/admin` page.
+6. ✅ **Admin UI:** SvelteKit + Go API as above. Replaces the interim `/admin` page.
 7. **End-to-end in headless Chrome**, against the hub alone: a stub OIDC app, the fake Telegram and
    Chrome's virtual authenticator. Telegram-only, passkey-only and both, step-up, a denied app,
    enrollment by link, logout everywhere, the admin UI's main paths, and no CSP violations.

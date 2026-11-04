@@ -31,6 +31,8 @@ curl -fsS "$url/jwks.json" | grep -q '"alg":"EdDSA"' || fail "jwks"
 headers=$(curl -fsSI "$url/")
 grep -qi "content-security-policy: default-src 'none'" <<<"$headers" || fail "CSP"
 grep -qi "x-frame-options: DENY" <<<"$headers" || fail "X-Frame-Options"
+code=$(curl -s -o /dev/null -w '%{http_code}' "$url/admin")
+[ "$code" = 403 ] || fail "/admin for nobody gave $code"
 code=$(curl -s -o /dev/null -w '%{http_code}' "$url/authorize?client_id=evil")
 [ "$code" = 400 ] || fail "unknown client gave $code"
 

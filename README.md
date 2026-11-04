@@ -30,7 +30,8 @@ Railway volume. The seed for a new database is `private/seed.json` (gitignored).
 | `GET /logout` | «Выйти на всех сайтах?»; takes `client_id`, `post_logout_redirect_uri` (listed for that app) and `state` |
 | `POST /logout` | Same-origin only (not same-site: every `*.almaz.dev` app is same-site); ends the hub session |
 | `GET /enroll[?t=…]`, `POST /enroll/options`, `POST /enroll/verify` | Adding a passkey: with an admin's link (single use, 24 h) or while logged in. Same-origin JSON only |
-| `GET /admin`, `POST /admin/enroll`, `POST /admin/passkeys/delete` | People and their passkeys; make a passkey link; remove a passkey. Admin only, same-origin forms |
+| `GET /admin/…` | The admin UI (SvelteKit, embedded). Admin only, assets included |
+| `/admin/api/…` | Its JSON API: people, groups, apps and their secrets, access, notify, passkey links and removal, the audit log. Admin only, same-origin, JSON |
 | `GET /admin/backup` | A consistent copy of the database: the admin (`HUB_ADMIN`) logged in, or `Authorization: Bearer $HUB_BACKUP_TOKEN` |
 | `GET /healthz` | `200 ok`, or `503` when anything is missing or broken, so Railway never switches to a hub that would serve nothing |
 
@@ -150,16 +151,26 @@ Also turn on Railway's volume backups. Restoring: stop the service, put the file
 `/data/hub.db` on the volume, start it. Without a backup, a lost volume means re-seeding and
 re-enrolling every passkey.
 
+### The admin UI
+
+`https://login.almaz.dev/admin`, for the `HUB_ADMIN` person logged in to the hub (by any method).
+Four pages: **Люди** (people, their groups, apps and passkeys, passkey links, who the bot messages),
+**Группы**, **Сайты** (URLs, login methods, access; a new or rotated client secret is shown once),
+**Журнал** (the audit log). Every change is checked like the seed and audited. The admin can't
+delete themselves or remove their own last way in.
+
+Its CSP header comes from the hub: `script-src 'self'` plus the hash of SvelteKit's one inline
+bootstrap script, `style-src 'self'`, `connect-src 'self'`. Nothing in the UI may set inline styles.
+
 ### Give someone a passkey
 
-1. Log in to the hub as the admin, open `https://login.almaz.dev/admin`, press «Ссылка для
-   passkey» next to the person.
+1. In the admin UI, **Люди** → «Ссылка для passkey» next to the person.
 2. Send them the link. It works once, for 24 hours; only its hash is stored.
 3. They open it on their device and create the passkey. It's saved at once, logs them in on that
    device, and the bot tells the notify person.
 
 Someone already logged in (any method) adds another device from the hub's home page. To remove a
-lost device's passkey: «Удалить» on `/admin`.
+lost device's passkey: «Удалить passkey» in the admin UI.
 
 ### Add an app
 
@@ -219,4 +230,11 @@ re-checks fail on the app's «не получилось войти» page.
 go test -race ./...     # the whole flow against a fake Telegram, with go-oidc and oauth2 as the apps
 golangci-lint run ./...
 scripts/smoke.sh        # the image, with throwaway secrets and seed (needs Docker)
+
+cd admin
+npm ci && npm run check # svelte-check
+npm run build           # into admin/build, which the Go build embeds
+HUB_URL=http://localhost:8080 npm run dev   # proxies /admin/api to a local hub; log in there first
 ```
+
+A hub built without `admin/build` serves «Админка не собрана» at `/admin`; the image always builds it.
