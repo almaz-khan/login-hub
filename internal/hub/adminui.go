@@ -66,15 +66,15 @@ func loadAdminUI() *adminUI {
 
 func (a *Server) adminUI(w http.ResponseWriter, r *http.Request) {
 	if a.admin(r) == nil {
-		// nobody logged in, or the admin without a passkey proof: the passkey login, then back
-		// here; someone else: not for them
+		// nobody logged in, or the admin without a passkey proof: the passkey login on this very
+		// page, then back here; someone else: not for them
 		id, err := a.resolve(a.session(r))
 		if err != nil {
 			a.broken(w, err)
 			return
 		}
 		if !id.proven() || id.person != nil && id.person.Key == a.cfg.Admin {
-			page(w, http.StatusUnauthorized, pageAdminLogin())
+			pageScript(w, http.StatusUnauthorized, pageAdminLogin())
 			return
 		}
 		page(w, http.StatusForbidden, pageAdminOnly)

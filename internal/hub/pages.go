@@ -243,11 +243,14 @@ func pageEnroll(p *store.Person, token string) string {
 <script>`+passkeyJS+`</script>`)
 }
 
-// pageAdminLogin: the admin UI asks for a passkey; Telegram never opens it
+// pageAdminLogin: the admin UI asks for a passkey, right here (served with pageScript); Telegram
+// never opens it
 func pageAdminLogin() string {
 	return layout("Admin", `<h1>Admin</h1>
 <p>For the person who gives out access. Passkey sign-in only.</p>
-`+loginButton("passkey", methodButton["passkey"], "/admin", false))
+<button class="btn" type="button" id="pk" data-next="/admin">`+methodButton["passkey"]+`</button>
+<p class="note" id="msg" role="status" aria-live="polite"></p>
+<script>`+passkeyJS+`</script>`)
 }
 
 // pageTelegramOff: a Telegram login asked for on a hub without one; c is the app, if known

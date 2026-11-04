@@ -85,7 +85,9 @@ func TestAdminLoginPage(t *testing.T) {
 	b := e.browser()
 	resp := b.get(e.url + "/admin")
 	page := body(resp)
-	if resp.StatusCode != http.StatusUnauthorized || !strings.Contains(page, `href="/login/passkey?next=%2Fadmin"`) || strings.Contains(page, "/login/telegram") {
+	// the passkey button is on this page: no second "Sign in with a passkey" page
+	if resp.StatusCode != http.StatusUnauthorized || !strings.Contains(page, `id="pk" data-next="/admin"`) || strings.Contains(page, "/login/telegram") ||
+		resp.Header.Get("Content-Security-Policy") != passkeyCSP {
 		t.Fatalf("admin, nobody logged in: %d %s", resp.StatusCode, page)
 	}
 	// the passkey login goes back to the admin UI

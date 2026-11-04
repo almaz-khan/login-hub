@@ -165,7 +165,7 @@ re-enrolling every passkey.
 ### The admin UI
 
 `https://login.almaz.dev/admin`, for the `HUB_ADMIN` person logged in **with a passkey**: Telegram
-alone never opens it, and the page offers only "Sign in with a passkey" (then comes back to `/admin`).
+alone never opens it, and the page offers only "Sign in with a passkey", which asks for the passkey right there.
 Four pages: **People** (people, their groups, apps and passkeys, passkey links, who the bot messages),
 **Groups**, **Apps** (URLs, login methods, access; a new or rotated client secret is shown once),
 **Audit log**. Every change is checked like the seed and audited. The admin can't
