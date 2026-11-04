@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Builds the image and runs it with throwaway secrets: /healthz, discovery, JWKS and the headers
-# must come back as in production, and the image must refuse to serve without its secrets.
+# Builds the image and runs it with throwaway secrets and a throwaway seed: /healthz, discovery,
+# JWKS and the headers must come back as in production, and the image must refuse to serve
+# without its secrets.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -13,7 +14,8 @@ cleanup() { docker rm -f "$name" "$name-bare" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 url=http://localhost:$port
-docker run -d --rm --name "$name" -p "$port:8080" \
+seed='{"people":{"Smoke":{"name":"Smoke","telegram":"1"}},"apps":{"smoke":{"name":"Smoke","redirect_uris":["https://smoke.example/cb"],"secret_sha256":"'$(printf x | shasum -a 256 | cut -d' ' -f1)'","allow":["Smoke"]}}}'
+docker run -d --rm --name "$name" -p "$port:8080" -e HUB_SEED="$seed" \
 	-e PUBLIC_URL="$url" \
 	-e TG_CLIENT_ID=1 -e TG_CLIENT_SECRET=x \
 	-e SESSION_SECRET="$(openssl rand -hex 32)" \

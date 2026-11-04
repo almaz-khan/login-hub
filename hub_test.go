@@ -21,6 +21,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,9 +38,11 @@ const (
 	tgSecret = "tg-secret"
 	botToken = "123:TEST-BOT-TOKEN"
 
+	// Telegram ids; the hub knows them as the people Alice, Bob and Carol
 	alice = "111" // in club: running-club and stub
 	bob   = "222" // stub only
 	carol = "333" // nobody's
+	dave  = "444" // a Telegram account the hub doesn't know
 )
 
 // app secrets (hex, as `hub secret` makes them); "plus" has one that needs form-encoding
@@ -59,24 +62,29 @@ func sha(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func accessJSON(allowRC ...string) string {
+func seedJSON(allowRC ...string) string {
 	if allowRC == nil {
 		allowRC = []string{"group:club"}
 	}
 	apps := map[string]any{}
-	for id, allow := range map[string][]string{"running-club": allowRC, "stub": {"group:club", bob}, "plus": {alice}} {
+	for id, allow := range map[string][]string{"running-club": allowRC, "stub": {"group:club", "Bob"}, "plus": {"Alice"}} {
 		apps[id] = map[string]any{
 			"name":                      map[string]string{"running-club": "Running Club Wrapped", "stub": "Stub", "plus": "Plus"}[id],
 			"redirect_uris":             []string{appURL(id) + "/auth/callback"},
 			"post_logout_redirect_uris": []string{appURL(id) + "/"},
 			"secret_sha256":             sha(secrets[id]),
+			"login":                     []string{"telegram"},
 			"allow":                     allow,
 		}
 	}
 	b, _ := json.Marshal(map[string]any{
-		"notify": alice,
-		"people": map[string]string{alice: "Alice", bob: "Bob", carol: "Carol"},
-		"groups": map[string][]string{"club": {alice}},
+		"notify": "Alice",
+		"people": map[string]any{
+			"Alice": map[string]string{"name": "Алиса", "telegram": alice},
+			"Bob":   map[string]string{"name": "Боб", "telegram": bob},
+			"Carol": map[string]string{"name": "Кэрол", "telegram": carol},
+		},
+		"groups": map[string][]string{"club": {"Alice"}},
 		"apps":   apps,
 	})
 	return string(b)
@@ -237,12 +245,11 @@ func setup(t *testing.T, mod ...func(*Config)) *env {
 	e := &env{t: t, tg: newFakeTG(t), bot: newFakeBot(t), logs: &syncBuffer{}}
 	e.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { e.app.Load().ServeHTTP(w, r) }))
 	t.Cleanup(e.srv.Close)
-	access, err := parseAccess([]byte(accessJSON()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := testStore(t, seedJSON())
 	e.cfg = Config{
-		Access:        access,
+		Store:         store,
+		Admin:         "Alice",
+		BackupToken:   backupToken,
 		ClientID:      tgClient,
 		ClientSecret:  tgSecret,
 		SessionSecret: strings.Repeat("s", 32),
@@ -272,13 +279,30 @@ func (e *env) reconfigure(mod ...func(*Config)) {
 	e.t.Cleanup(func() { a.wg.Wait() })
 }
 
-func withAccess(t *testing.T, raw string) func(*Config) {
-	return func(c *Config) {
-		a, err := parseAccess([]byte(raw))
-		if err != nil {
-			t.Fatal(err)
-		}
-		c.Access = a
+const backupToken = "backup-token-backup-token-backup-token"
+
+// testStore: a new database with this seed
+func testStore(t *testing.T, seed string) *Store {
+	t.Helper()
+	s, err := openStore(filepath.Join(t.TempDir(), "hub.db"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	f, err := parseSeed([]byte(seed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Import(f, "test"); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func (e *env) exec(query string, args ...any) {
+	e.t.Helper()
+	if _, err := e.cfg.Store.db.Exec(query, args...); err != nil {
+		e.t.Fatal(err)
 	}
 }
 
@@ -418,12 +442,13 @@ func TestFlow(t *testing.T) {
 	rc := e.rp("running-club")
 	idt := rc.login(b)
 	var c struct {
-		Name     string `json:"name"`
-		Username string `json:"preferred_username"`
-		AuthTime int64  `json:"auth_time"`
+		Name       string `json:"name"`
+		Username   string `json:"preferred_username"`
+		AuthTime   int64  `json:"auth_time"`
+		TelegramID string `json:"telegram_id"`
 	}
 	_ = idt.Claims(&c)
-	if idt.Subject != alice || idt.Audience[0] != "running-club" || c.Name != "Alice A" || c.Username != "alice" || c.AuthTime == 0 {
+	if idt.Subject != "Alice" || idt.Audience[0] != "running-club" || c.Name != "Алиса" || c.Username != "alice" || c.AuthTime == 0 || c.TelegramID != alice {
 		t.Fatalf("token: sub %q aud %v claims %+v", idt.Subject, idt.Audience, c)
 	}
 	if left := time.Until(idt.Expiry); left > 5*time.Minute || left < 4*time.Minute {
@@ -434,7 +459,7 @@ func TestFlow(t *testing.T) {
 	}
 	// a second app: straight back with a code, no Telegram
 	stub := e.rp("stub")
-	if idt := stub.login(b); idt.Subject != alice {
+	if idt := stub.login(b); idt.Subject != "Alice" {
 		t.Fatal(idt.Subject)
 	}
 	if e.tg.authCount() != 1 {
@@ -605,7 +630,7 @@ func TestAccessPerApp(t *testing.T) {
 	e.tg.as(bob, "Bob B", "bob")
 	b := e.browser()
 	stub, rc := e.rp("stub"), e.rp("running-club")
-	if idt := stub.login(b); idt.Subject != bob {
+	if idt := stub.login(b); idt.Subject != "Bob" {
 		t.Fatal(idt.Subject)
 	}
 	for i := 0; i < 2; i++ {
@@ -645,8 +670,8 @@ func TestRemovedWithLiveSession(t *testing.T) {
 	b := e.browser()
 	rc := e.rp("running-club")
 	rc.login(b)
-	// next deploy: Alice is out of running-club (allowed for nothing there but carol)
-	e.reconfigure(withAccess(t, accessJSON(carol)))
+	// Alice leaves the club: no redeploy, the next /authorize sees it
+	e.exec(`DELETE FROM group_members WHERE person = 'Alice'`)
 	a := rc.start()
 	if resp := b.get(a.url); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("removed person: %d", resp.StatusCode)
@@ -676,7 +701,7 @@ func TestKeyRotation(t *testing.T) {
 		t.Fatalf("token from before the rotation: %v", err)
 	}
 	idt := rc.login(b) // rc's verifier cached A only: go-oidc refetches on the new kid
-	if idt.Subject != alice {
+	if idt.Subject != "Alice" {
 		t.Fatal(idt.Subject)
 	}
 	var jwks jose.JSONWebKeySet
@@ -839,7 +864,7 @@ func TestDiscoveryAndHeaders(t *testing.T) {
 }
 
 func mustSeed(s string) ed25519.PrivateKey {
-	k, err := parseSeed(s)
+	k, err := parseKeySeed(s)
 	if err != nil {
 		panic(err)
 	}
@@ -868,16 +893,18 @@ func TestHTTPSCookies(t *testing.T) {
 
 func TestFailsClosed(t *testing.T) {
 	for name, mod := range map[string]func(*Config){
-		"no telegram":   func(c *Config) { c.ClientID = "" },
-		"short secret":  func(c *Config) { c.SessionSecret = "short" },
-		"no key":        func(c *Config) { c.SigningKey = "" },
-		"bad key":       func(c *Config) { c.SigningKey = "bm90IGEga2V5" },
-		"same old key":  func(c *Config) { c.SigningKeyOld = c.SigningKey },
-		"http issuer":   func(c *Config) { c.PublicURL = "http://login.example" },
-		"issuer path":   func(c *Config) { c.PublicURL = "https://login.example/x" },
-		"broken config": func(c *Config) { c.Access, c.AccessErr = nil, fmt.Errorf("bad") },
+		"no telegram":  func(c *Config) { c.ClientID = "" },
+		"short secret": func(c *Config) { c.SessionSecret = "short" },
+		"no key":       func(c *Config) { c.SigningKey = "" },
+		"bad key":      func(c *Config) { c.SigningKey = "bm90IGEga2V5" },
+		"same old key": func(c *Config) { c.SigningKeyOld = c.SigningKey },
+		"http issuer":  func(c *Config) { c.PublicURL = "http://login.example" },
+		"issuer path":  func(c *Config) { c.PublicURL = "https://login.example/x" },
+		"no database":  func(c *Config) { c.Store, c.StoreErr = nil, fmt.Errorf("bad") },
+		"bad seed":     func(c *Config) { c.Store, c.Seed = emptyStore(t), []byte(`{"people":{}}`) },
+		"no apps":      func(c *Config) { c.Store = emptyStore(t) },
 	} {
-		cfg := Config{SessionSecret: strings.Repeat("s", 32), ClientID: "1", ClientSecret: "2", PublicURL: "https://login.example", SigningKey: keyA, Access: &Access{Apps: map[string]*client{}}, Log: log.New(io.Discard, "", 0)}
+		cfg := Config{SessionSecret: strings.Repeat("s", 32), ClientID: "1", ClientSecret: "2", PublicURL: "https://login.example", SigningKey: keyA, Store: testStore(t, seedJSON()), Log: log.New(io.Discard, "", 0)}
 		mod(&cfg)
 		a := newApp(cfg)
 		for _, p := range []string{"/healthz", "/authorize", "/.well-known/openid-configuration", "/"} {
@@ -888,4 +915,13 @@ func TestFailsClosed(t *testing.T) {
 			}
 		}
 	}
+}
+
+func emptyStore(t *testing.T) *Store {
+	s, err := openStore(filepath.Join(t.TempDir(), "hub.db"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
 }

@@ -211,7 +211,7 @@ deployed without a go-ahead.
 
 1. ✅ **Hub skeleton + OIDC provider:** Telegram login, session, pages, notifications, headers,
    discovery, JWKS, `/authorize`, `/token`, codes, logout. Tested with go-oidc as the client.
-2. **SQLite storage + people:** migrations, the schema above (without passkeys), seed import
+2. ✅ **SQLite storage + people:** migrations, the schema above (without passkeys), seed import
    (`HUB_SEED`, `hub import`), access read from the database, `sub` = person key and
    `telegram_id`, backups (`/admin/backup`, `HUB_BACKUP_TOKEN`), fail closed on a bad database.
 3. **Login methods per app:** proven methods in the session, the chooser and step-up pages, `amr`.

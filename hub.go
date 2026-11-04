@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -21,8 +22,11 @@ import (
 )
 
 type Config struct {
-	Access        *Access
-	AccessErr     error  // why Access is nil
+	Store         *Store
+	StoreErr      error  // why Store is nil
+	Seed          []byte // HUB_SEED: imported once into an empty database
+	Admin         string // HUB_ADMIN: the person key that is always admin
+	BackupToken   string // HUB_BACKUP_TOKEN: for scripts/backup.sh
 	ClientID      string // Telegram (the bot's OpenID Connect client)
 	ClientSecret  string
 	Audience      string // Telegram's ID token aud; defaults to ClientID
@@ -30,7 +34,7 @@ type Config struct {
 	PublicURL     string // the issuer: https://…, no trailing slash
 	SigningKey    string // base64 Ed25519 seed for ID tokens
 	SigningKeyOld string // during a rotation: still listed in JWKS
-	BotToken      string // optional: message Access.Notify about refused logins
+	BotToken      string // optional: message the notify person about refused logins
 	TGBase        string // https://oauth.telegram.org; tests point it at a fake
 	BotAPI        string // https://api.telegram.org; tests point it at a fake
 	Log           *log.Logger
@@ -45,7 +49,7 @@ var (
 
 type app struct {
 	cfg         Config
-	access      *Access
+	store       *Store
 	missing     []string
 	secure      bool
 	issuer      string
@@ -68,7 +72,7 @@ type app struct {
 }
 
 func newApp(cfg Config) *app {
-	a := &app{cfg: cfg, access: cfg.Access, log: cfg.Log, client: cfg.Client, now: cfg.Now, notified: map[string]time.Time{}}
+	a := &app{cfg: cfg, store: cfg.Store, log: cfg.Log, client: cfg.Client, now: cfg.Now, notified: map[string]time.Time{}}
 	if a.log == nil {
 		a.log = log.Default()
 	}
@@ -101,10 +105,15 @@ func newApp(cfg Config) *app {
 		{len(cfg.SessionSecret) < 32, "SESSION_SECRET (32+ characters)"},
 		{!publicURL.MatchString(a.issuer) || checkAppURL(a.issuer) != nil, "PUBLIC_URL (https://host)"},
 		{keyErr != nil, fmt.Sprintf("HUB_SIGNING_KEY (%v)", keyErr)},
-		{cfg.Access == nil, fmt.Sprintf("access config (%v)", cfg.AccessErr)},
+		{cfg.Store == nil, fmt.Sprintf("database (%v)", cfg.StoreErr)},
 	} {
 		if m.bad {
 			a.missing = append(a.missing, m.name)
+		}
+	}
+	if cfg.Store != nil {
+		if err := a.seed(); err != nil {
+			a.missing = append(a.missing, err.Error())
 		}
 	}
 	if len(a.missing) > 0 {
@@ -112,13 +121,19 @@ func newApp(cfg Config) *app {
 		return a
 	}
 
+	notify, err := a.store.Notify()
 	switch {
+	case err != nil:
+		a.log.Printf("refused logins: in this log only (%v)", err)
 	case cfg.BotToken == "":
 		a.log.Printf("refused logins: in this log only (no TG_BOT_TOKEN)")
-	case a.access.Notify == "":
-		a.log.Printf("refused logins: in this log only (no notify in the access config)")
+	case notify == nil || notify.TelegramID == "":
+		a.log.Printf("refused logins: in this log only (no notify person with a Telegram id)")
 	default:
-		a.log.Printf("refused logins: messaged to %s", a.access.People[a.access.Notify])
+		a.log.Printf("refused logins: messaged to %s", notify.Key)
+	}
+	if cfg.Admin == "" {
+		a.log.Printf("no HUB_ADMIN: nobody is admin")
 	}
 	a.discovery = a.discoveryDoc()
 	remote := oidc.NewRemoteKeySet(oidc.ClientContext(context.Background(), a.client), a.tg+"/.well-known/jwks.json")
@@ -153,6 +168,8 @@ func (a *app) route(path, method string) (http.HandlerFunc, string) {
 		methods = m{"GET": a.callback}
 	case "/logout":
 		methods = m{"GET": a.logoutPage, "POST": a.logout}
+	case "/admin/backup":
+		methods = m{"GET": a.backup}
 	default:
 		return nil, ""
 	}
@@ -236,4 +253,34 @@ func or(v, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// seed: HUB_SEED goes into an empty database once; afterwards it is ignored (and should be
+// deleted). A database without apps serves nothing: every login would fail anyway.
+func (a *app) seed() error {
+	people, err := a.store.count("people")
+	if err != nil {
+		return fmt.Errorf("database: %v", err)
+	}
+	switch {
+	case len(a.cfg.Seed) > 0 && people == 0:
+		f, err := parseSeed(a.cfg.Seed)
+		if err != nil {
+			return fmt.Errorf("HUB_SEED: %v", err)
+		}
+		if err := a.store.Import(f, "HUB_SEED"); err != nil {
+			return fmt.Errorf("HUB_SEED: %v", err)
+		}
+		a.log.Printf("seeded: %d people, %d apps. Delete HUB_SEED now", len(f.People), len(f.Apps))
+	case len(a.cfg.Seed) > 0:
+		a.log.Printf("HUB_SEED ignored: the database already has people. Delete the variable")
+	}
+	apps, err := a.store.count("apps")
+	if err != nil {
+		return fmt.Errorf("database: %v", err)
+	}
+	if apps == 0 {
+		return errors.New("no apps in the database (set HUB_SEED for a new one)")
+	}
+	return nil
 }

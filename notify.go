@@ -20,8 +20,13 @@ import (
 
 const notifyEvery = time.Hour
 
-func (a *app) notifyDenied(who sessionData, c *client) {
-	if a.cfg.BotToken == "" || a.access.Notify == "" {
+// notifyDenied: person is nil for a Telegram account the hub doesn't know
+func (a *app) notifyDenied(who sessionData, person *Person, c *client) {
+	if a.cfg.BotToken == "" {
+		return
+	}
+	to, err := a.store.Notify()
+	if err != nil || to == nil || to.TelegramID == "" {
 		return
 	}
 	key := who.ID + " " + c.ID
@@ -46,11 +51,16 @@ func (a *app) notifyDenied(who sessionData, c *client) {
 		text += " (@" + html.EscapeString(who.Username) + ")"
 	}
 	text += "\nTelegram id: " + who.ID
+	if person != nil {
+		text += "\nВ хабе: " + html.EscapeString(person.Key)
+	} else {
+		text += "\nВ хабе такого человека нет"
+	}
 
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		a.send(text)
+		a.send(to.TelegramID, text)
 	}()
 }
 
@@ -65,8 +75,8 @@ func (a *app) waitNotify(ctx context.Context) {
 	}
 }
 
-func (a *app) send(text string) {
-	body, _ := json.Marshal(map[string]any{"chat_id": a.access.Notify, "text": text, "parse_mode": "HTML", "disable_web_page_preview": true})
+func (a *app) send(chat, text string) {
+	body, _ := json.Marshal(map[string]any{"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": true})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, a.botAPI+"/bot"+a.cfg.BotToken+"/sendMessage", bytes.NewReader(body))

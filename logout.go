@@ -16,7 +16,11 @@ type logoutTarget struct {
 }
 
 func (a *app) logoutTarget(v url.Values) logoutTarget {
-	t := logoutTarget{app: a.access.Apps[v.Get("client_id")]}
+	c, err := a.store.App(v.Get("client_id"))
+	if err != nil {
+		a.log.Printf("logout: database: %v", err)
+	}
+	t := logoutTarget{app: c}
 	if t.app != nil && t.app.logouts[v.Get("post_logout_redirect_uri")] {
 		t.back, t.state = v.Get("post_logout_redirect_uri"), v.Get("state")
 	} else if v.Get("post_logout_redirect_uri") != "" {
@@ -66,7 +70,7 @@ func (a *app) logout(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	t := a.logoutTarget(r.PostForm)
 	if who := a.session(r); who != nil {
-		a.log.Printf("logout: %s (%s)", who.ID, a.access.People[who.ID])
+		a.log.Printf("logout: telegram %s (%s)", who.ID, who.Name)
 	}
 	a.setCookie(w, a.sessionName, "", -1)
 	if t.back != "" {

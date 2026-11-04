@@ -2,14 +2,16 @@
 # Checks and uploads the hub to Railway from this Mac (there is no CI):
 #
 #   1. refuses unless the checkout is clean (and, once there is a remote, exactly origin/main);
-#   2. go vet, golangci-lint, go test -race, `hub check` on config/access.json, and a smoke test
-#      of the image (needs Docker running);
+#   2. go vet, golangci-lint, go test -race and a smoke test of the image (needs Docker running);
 #   3. uploads to the `hub` service; Railway switches over only once /healthz answers 200,
 #      so a hub that would serve nothing never replaces a working one.
 #
 #   scripts/deploy.sh [--skip-checks]
 #
-#   --skip-checks  skip lint, tests and the smoke test (emergencies only); `hub check` always runs
+#   --skip-checks  skip lint, tests and the smoke test (emergencies only)
+#
+# People, groups and apps are not deployed: they live in the database on the volume
+# (scripts/seed.sh fills a new one).
 #
 # Railway project and environment are fixed below, so this needs `railway login` but not `railway link`.
 set -euo pipefail
@@ -40,7 +42,6 @@ if git remote get-url origin >/dev/null 2>&1; then
 fi
 message=${DEPLOY_MESSAGE:-$(git log -1 --format='%h %s')}
 
-go run . check config/access.json
 if $checks; then
 	if ! docker info >/dev/null 2>&1; then
 		echo "Docker isn't running: start Docker Desktop for the smoke test (or pass --skip-checks)" >&2

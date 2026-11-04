@@ -36,7 +36,7 @@ type keySet struct {
 }
 
 // parseSeed: a 32-byte Ed25519 seed in standard or URL-safe base64, padded or not
-func parseSeed(s string) (ed25519.PrivateKey, error) {
+func parseKeySeed(s string) (ed25519.PrivateKey, error) {
 	s = strings.TrimRight(strings.TrimSpace(s), "=")
 	if s == "" {
 		return nil, errors.New("not set")
@@ -58,7 +58,7 @@ func kidOf(pub ed25519.PublicKey) string {
 }
 
 func newKeySet(current, old string) (*keySet, error) {
-	key, err := parseSeed(current)
+	key, err := parseKeySeed(current)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func newKeySet(current, old string) (*keySet, error) {
 	}
 	set := jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: pub, KeyID: ks.kid, Algorithm: string(jose.EdDSA), Use: "sig"}}}
 	if old != "" {
-		oldKey, err := parseSeed(old)
+		oldKey, err := parseKeySeed(old)
 		if err != nil {
 			return nil, fmt.Errorf("HUB_SIGNING_KEY_OLD: %w", err)
 		}
@@ -110,7 +110,7 @@ func (a *app) discoveryDoc() []byte {
 		"subject_types_supported":                        []string{"public"},
 		"id_token_signing_alg_values_supported":          []string{string(jose.EdDSA)},
 		"scopes_supported":                               []string{"openid", "profile"},
-		"claims_supported":                               []string{"iss", "sub", "aud", "exp", "iat", "auth_time", "nonce", "name", "preferred_username"},
+		"claims_supported":                               []string{"iss", "sub", "aud", "exp", "iat", "auth_time", "nonce", "name", "preferred_username", "telegram_id"},
 		"token_endpoint_auth_methods_supported":          []string{"client_secret_basic"},
 		"code_challenge_methods_supported":               []string{"S256"},
 		"prompt_values_supported":                        []string{"none"},
@@ -134,7 +134,8 @@ type grant struct {
 	redirect  string
 	nonce     string
 	challenge string
-	who       sessionData
+	who       sessionData // how they logged in (username, auth_time)
+	person    Person
 	exp       time.Time
 }
 
@@ -176,7 +177,11 @@ func (a *app) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	// Until client and redirect URL are known to match, nothing redirects: otherwise anyone could
 	// have the hub send codes to their own site.
-	c := a.access.Apps[q.Get("client_id")]
+	c, err := a.store.App(q.Get("client_id"))
+	if err != nil {
+		a.broken(w, err)
+		return
+	}
 	if c == nil {
 		a.log.Printf("authorize refused: unknown client %q", q.Get("client_id"))
 		page(w, http.StatusBadRequest, pageBadLink)
@@ -227,10 +232,27 @@ func (a *app) authorize(w http.ResponseWriter, r *http.Request) {
 		redirect(w, "/login?next="+url.QueryEscape("/authorize?"+r.URL.RawQuery))
 		return
 	}
-	// access is read from the config on every /authorize, never stored in the session
-	if !c.may(who.ID) {
-		a.log.Printf("access denied: %s (%s @%s) → %s", who.ID, who.Name, who.Username, c.ID)
-		a.notifyDenied(*who, c)
+	// who they are and what they may open are read from the database on every /authorize,
+	// never stored in the session: a removed person or a changed allow list applies at once
+	person, err := a.store.PersonByTelegram(who.ID)
+	if err != nil {
+		a.broken(w, err)
+		return
+	}
+	allowed := false
+	if person != nil {
+		if allowed, err = a.store.Allowed(c.ID, person.Key); err != nil {
+			a.broken(w, err)
+			return
+		}
+	}
+	if !allowed {
+		label := "unknown Telegram account"
+		if person != nil {
+			label = person.Key
+		}
+		a.log.Printf("access denied: %s, telegram %s (%s @%s) → %s", label, who.ID, who.Name, who.Username, c.ID)
+		a.notifyDenied(*who, person, c)
 		if contains(prompt, "none") {
 			fail("access_denied", "not allowed for this app")
 			return
@@ -241,9 +263,12 @@ func (a *app) authorize(w http.ResponseWriter, r *http.Request) {
 	code := random()
 	a.codes.put(code, grant{
 		client: c.ID, redirect: back, nonce: q.Get("nonce"), challenge: q.Get("code_challenge"),
-		who: *who, exp: a.now().Add(codeTTL),
+		who: *who, person: *person, exp: a.now().Add(codeTTL),
 	}, a.now())
-	a.log.Printf("authorize: %s (%s) → %s", who.ID, a.access.People[who.ID], c.ID)
+	if err := a.store.Seen(person.Key); err != nil {
+		a.log.Printf("last seen: %v", err)
+	}
+	a.log.Printf("authorize: %s → %s", person.Key, c.ID)
 	redirect(w, a.withQuery(back, "code", code, "state", state))
 }
 
@@ -308,13 +333,16 @@ func (a *app) token(w http.ResponseWriter, r *http.Request) {
 	now := a.now()
 	claims := map[string]any{
 		"iss":       a.issuer,
-		"sub":       g.who.ID,
+		"sub":       g.person.Key,
 		"aud":       c.ID,
 		"iat":       now.Unix(),
 		"exp":       now.Add(idTokenTTL).Unix(),
 		"auth_time": g.who.At,
 		"nonce":     g.nonce,
-		"name":      or(g.who.Name, a.access.People[g.who.ID]),
+		"name":      g.person.Name,
+	}
+	if g.person.TelegramID != "" {
+		claims["telegram_id"] = g.person.TelegramID
 	}
 	if g.who.Username != "" {
 		claims["preferred_username"] = g.who.Username
@@ -342,11 +370,15 @@ func (a *app) clientAuth(r *http.Request) *client {
 	if !ok || pass == "" {
 		return nil
 	}
-	c := a.access.Apps[user]
-	if c == nil {
-		if u, err := url.QueryUnescape(user); err == nil {
-			c = a.access.Apps[u]
+	c, err := a.store.App(user)
+	if c == nil && err == nil {
+		if u, uerr := url.QueryUnescape(user); uerr == nil && u != user {
+			c, err = a.store.App(u)
 		}
+	}
+	if err != nil {
+		a.log.Printf("token: database: %v", err)
+		return nil
 	}
 	if c == nil {
 		return nil
@@ -391,4 +423,10 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// broken: the database failed; nothing is let through
+func (a *app) broken(w http.ResponseWriter, err error) {
+	a.log.Printf("error: database: %v", err)
+	page(w, http.StatusInternalServerError, pageFailed("/"))
 }
