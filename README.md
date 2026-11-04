@@ -79,7 +79,9 @@ Railway variables on `hub`:
 | `DATA_DIR` | `/data`: the volume, holding `hub.db` |
 | `RAILWAY_RUN_UID` | `0`: Railway mounts the volume as root, and the image's own user (65534) couldn't write to it |
 
-In @BotFather, the bot's allowed redirect URL is `https://login.almaz.dev/callback`.
+In @BotFather (Bot Settings → Login Widget), the bot's allowed URLs must include both the hub's
+origin, `https://login.almaz.dev`, and its callback, `https://login.almaz.dev/callback`. With only the
+callback, Telegram's login page answers «redirect_uri required».
 
 ### The database
 
